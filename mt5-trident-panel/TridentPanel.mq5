@@ -4,7 +4,7 @@
 //|  Trendlinien und Candle-Countdown mit Minimieren-Taste.          |
 //+------------------------------------------------------------------+
 #property copyright   "TridentPanel"
-#property version     "1.00"
+#property version     "1.10"
 #property description "Panel mit Rechtecken (normal / mit Alarm), Dreizack, Trendlinien und Candle-Countdown"
 #property indicator_chart_window
 #property indicator_plots 0
@@ -28,13 +28,16 @@ input bool   InpAlarmOnce        = true;         // Nur einmal auslösen (danach
 input bool   InpAlarmTimeRange   = false;        // Nur auslösen, solange die Zeit im Rechteck liegt
 
 input group "Dreizack"
-input double InpLevel1           = 1.0;          // Ziel 1 (x Impulshöhe ab Extrempunkt)
-input double InpLevel2           = 1.5;          // Ziel 2 (x Impulshöhe ab Extrempunkt)
-input double InpLevel3           = 2.0;          // Ziel 3 (x Impulshöhe ab Extrempunkt)
-input int    InpLevelBars        = 100;          // Länge der Ziellinien (Kerzen)
-input int    InpTridentWidth     = 1;            // Linienbreite Dreizack
-input int    InpLevelWidth       = 2;            // Linienbreite Ziellinien
+input int    InpTridentBars      = 4;            // Startbreite des Impulses A-B (Kerzen)
+input int    InpTridentHeight    = 130;          // Starthöhe des Impulses A-B (Pixel)
+input int    InpTridentWidth     = 1;            // Linienbreite
 input bool   InpShowInfo         = true;         // Info-Text "Kerzen/Punkte" am Extrempunkt
+input bool   InpShowBox          = true;         // Gestricheltes Rechteck von A bis zur Höhe von C
+input int    InpBoxBars          = 50;           // Breite des gestrichelten Rechtecks (Kerzen)
+input color  InpBoxColor         = clrMediumSeaGreen; // Farbe des gestrichelten Rechtecks
+input bool   InpShowLevels       = false;        // Zusätzlich waagrechte Ziellinien 1/2/3 zeichnen
+input int    InpLevelBars        = 100;          // Länge der Ziellinien (Kerzen)
+input int    InpLevelWidth       = 2;            // Linienbreite der Ziellinien
 
 input group "Trendlinien"
 input int    InpTrendWidth       = 1;            // Linienbreite
@@ -57,8 +60,9 @@ input bool   InpTrendRay         = false;        // Strahl nach rechts
 #define NM_SEP2     "TP_UI_SEP2"
 #define NM_SEP3     "TP_UI_SEP3"
 
-#define TXT_ALARM_ON   "Alarm: aktiv"
-#define TXT_ALARM_OFF  "Alarm: ausgelöst"
+// Der Alarm-Zustand steht im Tooltip des Rechtecks (nicht im Beschreibungstext, der im Chart erscheinen kann)
+#define TT_ALARM_ON   "Alarm-Rechteck (aktiv)"
+#define TT_ALARM_OFF  "Alarm-Rechteck (ausgelöst)"
 
 //--- Layout (Pixel, relativ zur linken oberen Panel-Ecke) -----------
 #define BTN        24     // Kantenlänge der quadratischen Tasten
@@ -81,23 +85,20 @@ input bool   InpTrendRay         = false;        // Strahl nach rechts
 #define TREND_W    30
 #define TREND_H    14
 
-//--- Farben (Vorlage aus der Skizze) --------------------------------
+//--- Farben (Vorlage aus der Skizze; Dreizack blau/lila wie im Original) ---
 color CLR_ALARM[6]  = { C'112,173,71', C'91,155,213', C'237,125,49', C'255,192,0', C'255,0,0', C'112,48,160' };
 color CLR_NORMAL[4] = { C'91,155,213', C'146,208,80', C'244,177,131', C'190,90,240' };
-color CLR_TRI[4]    = { C'91,155,213', C'112,173,71', C'255,192,110', C'190,90,240' };
+color CLR_TRI[4]    = { C'0,191,255', C'112,173,71', C'255,192,110', C'147,112,219' };
 color CLR_TREND[4]  = { C'91,155,213', C'112,173,71', C'237,125,49', C'190,90,240' };
 
-//--- Zeichenmodus ---------------------------------------------------
-enum ENUM_TP_MODE { TP_NONE = 0, TP_RECT_ALARM, TP_RECT_NORMAL, TP_TRIDENT, TP_TREND };
+//--- Zeichenmodus (Rechtecke und Trendlinien: Taste, dann 2 Klicks) --
+enum ENUM_TP_MODE { TP_NONE = 0, TP_RECT_ALARM, TP_RECT_NORMAL, TP_TREND };
 
 bool         g_min         = false;     // Panel minimiert?
 ENUM_TP_MODE g_mode        = TP_NONE;   // aktive Zeichentaste
 int          g_var         = -1;        // Index der aktiven Taste
 int          g_step        = 0;         // 0 = wartet auf 1. Klick, 1 = wartet auf 2. Klick
-datetime     g_t1          = 0;
-double       g_p1          = 0.0;
-string       g_obj         = "";        // Vorschau-/Hauptobjekt während des Zeichnens
-string       g_base        = "";        // Dreizack: Basisname
+string       g_obj         = "";        // Vorschauobjekt während des Zeichnens
 bool         g_mouse_saved = false;
 long         g_mouse_prev  = 0;
 double       g_last_bid    = 0.0;
@@ -128,7 +129,6 @@ string ModeKind(const ENUM_TP_MODE m)
   {
    if(m == TP_RECT_ALARM)  return "A";
    if(m == TP_RECT_NORMAL) return "N";
-   if(m == TP_TRIDENT)     return "T";
    if(m == TP_TREND)       return "L";
    return "";
   }
@@ -137,7 +137,6 @@ ENUM_TP_MODE KindToMode(const string k)
   {
    if(k == "A") return TP_RECT_ALARM;
    if(k == "N") return TP_RECT_NORMAL;
-   if(k == "T") return TP_TRIDENT;
    if(k == "L") return TP_TREND;
    return TP_NONE;
   }
@@ -147,11 +146,29 @@ string BtnName(const string kind, const int idx)
    return NM_BTN + kind + IntegerToString(idx);
   }
 
-double LevelMult(const int k)
+//--- Kerzenposition: 0 = aktuelle Kerze, negativ = Vergangenheit, positiv = Zukunft.
+//    Damit werden Abstände in Kerzen gerechnet (Wochenenden/Lücken stören nicht).
+double BarPos(const datetime t)
   {
-   if(k == 1) return InpLevel1;
-   if(k == 2) return InpLevel2;
-   return InpLevel3;
+   const datetime t0 = iTime(_Symbol, _Period, 0);
+   if(t0 == 0)
+      return 0.0;
+   if(t >= t0)
+      return (double)(t - t0) / PeriodSeconds();
+   return -(double)iBarShift(_Symbol, _Period, t, false);
+  }
+
+datetime PosToTime(const double pos)
+  {
+   const datetime t0 = iTime(_Symbol, _Period, 0);
+   const int      ps = PeriodSeconds();
+   if(pos > 0.0)
+      return (datetime)((long)t0 + (long)MathRound(pos * ps));
+   const int s = (int)MathRound(-pos);
+   const datetime t = iTime(_Symbol, _Period, s);
+   if(t != 0)
+      return t;
+   return (datetime)((long)t0 - (long)s * ps);   // vor der ältesten Kerze: extrapolieren
   }
 
 //+------------------------------------------------------------------+
@@ -237,9 +254,6 @@ string StatusText()
    string n = IntegerToString(g_step + 1) + "/2";
    if(g_mode == TP_RECT_ALARM)  return "Alarm-Rechteck: Klick " + n + "  (ESC = Abbruch)";
    if(g_mode == TP_RECT_NORMAL) return "Rechteck: Klick " + n + "  (ESC = Abbruch)";
-   if(g_mode == TP_TRIDENT)
-      return (g_step == 0 ? "Dreizack: Startpunkt klicken (ESC = Abbruch)"
-                          : "Dreizack: Extrempunkt klicken (ESC = Abbruch)");
    if(g_mode == TP_TREND)       return "Trendlinie: Klick " + n + "  (ESC = Abbruch)";
    return "Trident Panel";
   }
@@ -357,7 +371,7 @@ void Panel_Build()
       // Gruppe 3: Dreizack (2 x 2)
       for(int i = 0; i < 4; i++)
          UiButton(BtnName("T", i), ox + GX_TRI + (i % 2) * (BTN + GAP), oy + (i < 2 ? ROW0 : ROW1),
-                  BTN, BTN, CLR_TRI[i], "", "Dreizack: 1. Klick = Start, 2. Klick = Extrempunkt");
+                  BTN, BTN, CLR_TRI[i], "", "Dreizack erzeugen (danach A, B und C mit der Maus anpassen)");
       UiRect(NM_SEP3, ox + 217, oy + ROW0, 1, 52, C'160,160,160', C'160,160,160');
 
       // Gruppe 4: Candle-Timer + Trendlinien
@@ -411,13 +425,31 @@ void CreateRect(const string name, const datetime t, const double p, const color
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
-   if(alarm)
+   ObjectSetString(0, name, OBJPROP_TOOLTIP, alarm ? TT_ALARM_ON : "Rechteck");
+  }
+
+// Rechteck anlegen bzw. verschieben (Hilfsobjekt, nicht auswählbar)
+void PutRect(const string name, const datetime t1, const double p1, const datetime t2, const double p2,
+             const color clr, const ENUM_LINE_STYLE style)
+  {
+   if(ObjectFind(0, name) < 0)
      {
-      ObjectSetString(0, name, OBJPROP_TEXT, TXT_ALARM_ON);
-      ObjectSetString(0, name, OBJPROP_TOOLTIP, "Alarm-Rechteck");
+      if(!ObjectCreate(0, name, OBJ_RECTANGLE, 0, t1, p1, t2, p2))
+         return;
+      ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, name, OBJPROP_FILL, false);
+      ObjectSetInteger(0, name, OBJPROP_BACK, false);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
      }
    else
-      ObjectSetString(0, name, OBJPROP_TOOLTIP, "Rechteck");
+     {
+      ObjectMove(0, name, 0, t1, p1);
+      ObjectMove(0, name, 1, t2, p2);
+     }
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, style);
   }
 
 // Trendlinie anlegen bzw. verschieben
@@ -444,7 +476,7 @@ void PutTrend(const string name, const datetime t1, const double p1, const datet
   }
 
 void PutText(const string name, const datetime t, const double p, const string text, const color clr,
-             const int size, const ENUM_ANCHOR_POINT anchor)
+             const int size, const string font, const ENUM_ANCHOR_POINT anchor)
   {
    if(ObjectFind(0, name) < 0)
      {
@@ -452,10 +484,10 @@ void PutText(const string name, const datetime t, const double p, const string t
          return;
       ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
-      ObjectSetString(0, name, OBJPROP_FONT, "Arial Bold");
      }
    else
       ObjectMove(0, name, 0, t, p);
+   ObjectSetString(0, name, OBJPROP_FONT, font);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, size);
@@ -463,78 +495,157 @@ void PutText(const string name, const datetime t, const double p, const string t
   }
 
 //+------------------------------------------------------------------+
-//| Dreizack                                                         |
-//|  A-B  = Impuls (Start -> Extrempunkt), Mittelpunkt = 50 %        |
-//|  B-C  = Rücksetzer auf 50 % (C rastet auf 50 % ein, Zeit frei)   |
-//|  P1-3 = drei Zinken (verschobene Kopien des Impulses A-B)        |
-//|  L1-3 = Ziellinien bei B + 1,0 / 1,5 / 2,0 x Impulshöhe          |
+//| Dreizack (Vorlage: Screenshot des Originals, auf 1 px genau)     |
+//|                                                                  |
+//|  A-B  Impuls L (Start -> Extrempunkt), Mittelpunkt bei 50 %      |
+//|  B-C  Rücksetzer R; C liegt standardmäßig 3 Impulsbreiten hinter |
+//|       B auf 50 % der Impulshöhe                                  |
+//|  linke Zinke     B+L     -> B+2L                                 |
+//|  mittlere Zinke  C       -> C+2L                                 |
+//|  rechte Zinke    B+L+2R  -> B+2L+2R                              |
+//|  Diagonale       B+L     -> B+L+2R                               |
+//|  gestricheltes Rechteck: A bis A+50 Kerzen, Preis von A bis C    |
+//|  Info-Text am Extrempunkt: Kerzen/Punkte des Impulses            |
+//|                                                                  |
+//|  Masterobjekte (auswählbar): <base>_AB und <base>_BC.            |
+//|  Alles andere wird bei jedem Verschieben daraus neu berechnet.   |
+//|  Gespeichert wird nur die Lage von C relativ zum Impuls          |
+//|  (rt = Zeitversatz / Impulsbreite, rp = Preisversatz / Höhe).    |
 //+------------------------------------------------------------------+
-void Trident_Rebuild(const string base)
+void Trident_LoadState(const string base, double &rt, double &rp)
+  {
+   rt = 3.0;
+   rp = -0.5;
+   const string nm = base + "_S";
+   if(ObjectFind(0, nm) < 0)
+      return;
+   const string s = ObjectGetString(0, nm, OBJPROP_TEXT);
+   const int    k = StringFind(s, ";");
+   if(k <= 0)
+      return;
+   rt = StringToDouble(StringSubstr(s, 0, k));
+   rp = StringToDouble(StringSubstr(s, k + 1));
+  }
+
+void Trident_SaveState(const string base, const double rt, const double rp)
+  {
+   const string nm = base + "_S";
+   if(ObjectFind(0, nm) < 0)
+     {
+      if(!ObjectCreate(0, nm, OBJ_LABEL, 0, 0, 0))
+         return;
+      ObjectSetInteger(0, nm, OBJPROP_TIMEFRAMES, OBJ_NO_PERIODS);   // unsichtbar
+      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+     }
+   ObjectSetString(0, nm, OBJPROP_TEXT, DoubleToString(rt, 6) + ";" + DoubleToString(rp, 6));
+  }
+
+// Waagrechte Ziellinie (optional) mit Nummer am rechten Ende
+void Trident_Level(const string base, const int k, const double x, const double p, const color clr)
+  {
+   const string sk = IntegerToString(k);
+   const datetime t1 = PosToTime(x);
+   const datetime t2 = PosToTime(x + InpLevelBars);
+   PutTrend(base + "_L" + sk, t1, p, t2, p, clr, InpLevelWidth, false, false, true);
+   PutText(base + "_T" + sk, t2, p, sk, clr, 10, "Arial Bold", ANCHOR_LEFT);
+   ObjectSetString(0, base + "_L" + sk, OBJPROP_TOOLTIP, "Ziel " + sk + ": " + DoubleToString(p, _Digits));
+  }
+
+// cFromObject = true: Lage von C aus dem Objekt <base>_BC lesen (C wurde gezogen / Neuaufbau)
+// cFromObject = false: Lage von C aus dem gespeicherten Verhältnis (A oder B wurden gezogen)
+void Trident_Rebuild(const string base, const bool cFromObject)
   {
    const string ab = base + "_AB";
    const string bc = base + "_BC";
    if(ObjectFind(0, ab) < 0)
       return;
 
-   color    clr = (color)ObjectGetInteger(0, ab, OBJPROP_COLOR);
-   datetime ta  = (datetime)ObjectGetInteger(0, ab, OBJPROP_TIME, 0);
-   double   pa  = ObjectGetDouble(0, ab, OBJPROP_PRICE, 0);
-   datetime tb  = (datetime)ObjectGetInteger(0, ab, OBJPROP_TIME, 1);
-   double   pb  = ObjectGetDouble(0, ab, OBJPROP_PRICE, 1);
-   if(tb < ta)   // B soll zeitlich hinter A liegen
+   const color clr = (color)ObjectGetInteger(0, ab, OBJPROP_COLOR);
+   double xa = BarPos((datetime)ObjectGetInteger(0, ab, OBJPROP_TIME, 0));
+   double pa = ObjectGetDouble(0, ab, OBJPROP_PRICE, 0);
+   double xb = BarPos((datetime)ObjectGetInteger(0, ab, OBJPROP_TIME, 1));
+   double pb = ObjectGetDouble(0, ab, OBJPROP_PRICE, 1);
+   if(xb < xa)   // B soll zeitlich hinter A liegen
      {
-      datetime tt = ta;
-      ta = tb;
-      tb = tt;
-      double pp = pa;
+      double tx = xa;
+      xa = xb;
+      xb = tx;
+      double tp = pa;
       pa = pb;
-      pb = pp;
+      pb = tp;
      }
 
-   const int ps = PeriodSeconds();
-   long d = (long)(tb - ta);          // Dauer des Impulses in Sekunden
-   if(d < ps)
-      d = ps;
-   const double H  = pb - pa;         // Impulshöhe (mit Vorzeichen)
-   const double pc = pa + 0.5 * H;    // 50 %-Rücksetzer
+   double d = xb - xa;           // Impulsbreite in Kerzen
+   if(d < 1.0)
+      d = 1.0;
+   const double H = pb - pa;     // Impulshöhe (mit Vorzeichen)
 
-   datetime tc = (datetime)(tb + d);  // Standard: Spiegelung der Impulsdauer
-   if(ObjectFind(0, bc) >= 0)
+   double rt, rp;
+   Trident_LoadState(base, rt, rp);
+   if(cFromObject && ObjectFind(0, bc) >= 0)
      {
-      datetime tcu = (datetime)ObjectGetInteger(0, bc, OBJPROP_TIME, 1);
-      if(tcu > tb)
-         tc = tcu;
+      const double xc0 = BarPos((datetime)ObjectGetInteger(0, bc, OBJPROP_TIME, 1));
+      const double pc0 = ObjectGetDouble(0, bc, OBJPROP_PRICE, 1);
+      rt = (xc0 - xb) / d;
+      if(MathAbs(H) >= _Point)
+         rp = (pc0 - pb) / H;
      }
-   PutTrend(bc, tb, pb, tc, pc, clr, InpTridentWidth, false, true, false);
+   Trident_SaveState(base, rt, rp);
 
-   for(int k = 1; k <= 3; k++)
-     {
-      const double m    = LevelMult(k);
-      const string sk   = IntegerToString(k);
-      datetime     tbot = (datetime)(tc + (3 - k) * d);
-      datetime     ttop = (datetime)(tbot + d);
-      double       pbot = pb + (m - 1.0) * H;
-      double       ptop = pb + m * H;
-      datetime     tend = (datetime)(ttop + (long)InpLevelBars * ps);
+   const double e  = rt * d;     // C relativ zu B: Zeit (Kerzen)
+   const double r  = rp * H;     // C relativ zu B: Preis
+   const double xc = xb + e;
+   const double pc = pb + r;
 
-      PutTrend(base + "_P" + sk, tbot, pbot, ttop, ptop, clr, InpTridentWidth, false, false, true);
-      PutTrend(base + "_L" + sk, ttop, ptop, tend, ptop, clr, InpLevelWidth, false, false, true);
-      PutText(base + "_T" + sk, tend, ptop, sk, clr, 10, ANCHOR_LEFT);
-      ObjectSetString(0, base + "_L" + sk, OBJPROP_TOOLTIP,
-                      "Ziel " + sk + " (" + DoubleToString(m, 2) + " x Impuls): " + DoubleToString(ptop, _Digits));
-     }
+   // Rücksetzer B-C (Masterobjekt)
+   PutTrend(bc, PosToTime(xb), pb, PosToTime(xc), pc, clr, InpTridentWidth, false, true, false);
 
+   // Zinken und Diagonale
+   PutTrend(base + "_PA", PosToTime(xb + d), pb + H, PosToTime(xb + 2 * d), pb + 2 * H,
+            clr, InpTridentWidth, false, false, true);                               // links:  B+L -> B+2L
+   PutTrend(base + "_PB", PosToTime(xc), pc, PosToTime(xc + 2 * d), pc + 2 * H,
+            clr, InpTridentWidth, false, false, true);                               // Mitte:  C -> C+2L
+   PutTrend(base + "_PC", PosToTime(xb + d + 2 * e), pb + H + 2 * r,
+            PosToTime(xb + 2 * d + 2 * e), pb + 2 * H + 2 * r,
+            clr, InpTridentWidth, false, false, true);                               // rechts: B+L+2R -> B+2L+2R
+   PutTrend(base + "_DG", PosToTime(xb + d), pb + H, PosToTime(xb + d + 2 * e), pb + H + 2 * r,
+            clr, InpTridentWidth, false, false, true);                               // Diagonale
+
+   // Gestricheltes Rechteck: von A bis zur Höhe von C
+   if(InpShowBox)
+      PutRect(base + "_BX", PosToTime(xa), pa, PosToTime(xa + InpBoxBars), pc, InpBoxColor, STYLE_DASH);
+   else
+      ObjectDelete(0, base + "_BX");
+
+   // Info-Text "Kerzen/Punkte" am Extrempunkt
    if(InpShowInfo)
      {
-      int b1   = iBarShift(_Symbol, _Period, ta, false);
-      int b2   = iBarShift(_Symbol, _Period, tb, false);
-      int bars = (b1 > b2 ? b1 - b2 : b2 - b1);
-      long pts = (long)MathRound(MathAbs(H) / _Point);
-      PutText(base + "_I", tb, pb, IntegerToString(bars) + "/" + IntegerToString(pts), clr, 8,
-              (H >= 0 ? ANCHOR_LOWER : ANCHOR_UPPER));
+      const long bars = (long)MathRound(xb - xa);
+      const long pts  = (long)MathRound(MathAbs(H) / _Point);
+      PutText(base + "_I", PosToTime(xb), pb, IntegerToString(bars) + "/" + IntegerToString(pts), clr, 8,
+              "Arial", (H >= 0 ? ANCHOR_LOWER : ANCHOR_UPPER));
      }
    else
       ObjectDelete(0, base + "_I");
+
+   // Optionale Ziellinien: 1 = niedrigstes Ziel (rechte Zinke), 3 = höchstes (linke Zinke)
+   if(InpShowLevels)
+     {
+      Trident_Level(base, 1, xb + 2 * d + 2 * e, pb + 2 * H + 2 * r, clr);
+      Trident_Level(base, 2, xc + 2 * d, pc + 2 * H, clr);
+      Trident_Level(base, 3, xb + 2 * d, pb + 2 * H, clr);
+     }
+   else
+      for(int k = 1; k <= 3; k++)
+        {
+         ObjectDelete(0, base + "_L" + IntegerToString(k));
+         ObjectDelete(0, base + "_T" + IntegerToString(k));
+        }
+
+   // Reste der Vorgängerversion (Zinken _P1.._P3) entfernen
+   for(int k = 1; k <= 3; k++)
+      ObjectDelete(0, base + "_P" + IntegerToString(k));
   }
 
 void Trident_RefreshAll()
@@ -552,26 +663,50 @@ void Trident_RefreshAll()
         }
      }
    for(int i = 0; i < n; i++)
-      Trident_Rebuild(list[i]);
+      Trident_Rebuild(list[i], true);   // C bleibt, wo es ist; nur Kerzenzahl/Längen werden aktualisiert
+  }
+
+// Dreizack sofort im sichtbaren Chartbereich erzeugen; Punkte A, B, C sind ausgewählt
+void Trident_Create(const int idx)
+  {
+   const int w = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   const int h = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0);
+   int hpx = MathMin(InpTridentHeight, h / 5);
+   if(hpx < 20)
+      hpx = 20;
+   const int xa = (int)(w * 0.35);
+   const int ya = (int)(h * 0.75);
+
+   int      sub;
+   datetime ta, tdummy;
+   double   pa, pb;
+   if(!ChartXYToTimePrice(0, xa, ya, sub, ta, pa) || sub != 0)
+      return;
+   if(!ChartXYToTimePrice(0, xa, ya - hpx, sub, tdummy, pb))
+      return;
+
+   const double xA   = BarPos(ta);
+   const string base = NewBase(PFX_TRI, "_AB");
+   PutTrend(base + "_AB", PosToTime(xA), pa, PosToTime(xA + MathMax(1, InpTridentBars)), pb,
+            CLR_TRI[idx], InpTridentWidth, false, true, false);
+   Trident_SaveState(base, 3.0, -0.5);
+   Trident_Rebuild(base, false);
+   ObjectSetInteger(0, base + "_AB", OBJPROP_SELECTED, true);   // Anfasser sofort sichtbar
+   ObjectSetInteger(0, base + "_BC", OBJPROP_SELECTED, true);
+   ChartRedraw();
   }
 
 //+------------------------------------------------------------------+
-//| Zeichenmodus                                                     |
+//| Zeichenmodus für Rechtecke und Trendlinien                       |
 //+------------------------------------------------------------------+
 void Cancel()
   {
    if(g_step == 1 && g_obj != "")
-     {
-      if(g_mode == TP_TRIDENT)
-         ObjectsDeleteAll(0, g_base + "_");
-      else
-         ObjectDelete(0, g_obj);
-     }
+      ObjectDelete(0, g_obj);
    g_mode = TP_NONE;
    g_var  = -1;
    g_step = 0;
    g_obj  = "";
-   g_base = "";
    if(g_mouse_saved)
      {
       ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, g_mouse_prev);
@@ -601,8 +736,6 @@ void Arm(const ENUM_TP_MODE mode, const int idx)
 
 void StartDrawing(const datetime t, const double p)
   {
-   g_t1 = t;
-   g_p1 = p;
    switch(g_mode)
      {
       case TP_RECT_ALARM:
@@ -612,11 +745,6 @@ void StartDrawing(const datetime t, const double p)
       case TP_RECT_NORMAL:
          g_obj = NewBase(PFX_RECT, "");
          CreateRect(g_obj, t, p, CLR_NORMAL[g_var], false);
-         break;
-      case TP_TRIDENT:
-         g_base = NewBase(PFX_TRI, "_AB");
-         g_obj  = g_base + "_AB";
-         PutTrend(g_obj, t, p, t, p, CLR_TRI[g_var], InpTridentWidth, false, false, false);
          break;
       case TP_TREND:
          g_obj = NewBase(PFX_TREND, "");
@@ -634,12 +762,7 @@ void FinishDrawing(const datetime t, const double p)
   {
    ObjectMove(0, g_obj, 1, t, p);
    ObjectSetInteger(0, g_obj, OBJPROP_SELECTABLE, true);
-   if(g_mode == TP_TRIDENT)
-     {
-      Trident_Rebuild(g_base);
-      ObjectSetInteger(0, g_base + "_AB", OBJPROP_SELECTED, true);   // Anfasser sofort sichtbar
-      ObjectSetInteger(0, g_base + "_BC", OBJPROP_SELECTED, true);
-     }
+   ObjectSetInteger(0, g_obj, OBJPROP_SELECTED, false);
    g_step = 0;     // Objekt bleibt stehen -> Cancel() löscht nichts
    Cancel();
   }
@@ -685,8 +808,17 @@ void OnPanelObject(const string name)
      }
    if(StringSubstr(s, 0, 4) != "BTN_")
       return;
-   ENUM_TP_MODE m   = KindToMode(StringSubstr(s, 4, 1));
-   int          idx = (int)StringToInteger(StringSubstr(s, 5));
+   string kind = StringSubstr(s, 4, 1);
+   int    idx  = (int)StringToInteger(StringSubstr(s, 5));
+
+   if(kind == "T")
+     {
+      Cancel();               // laufenden Zeichenvorgang beenden, Taste zurücksetzen
+      Trident_Create(idx);    // Dreizack erscheint sofort im Chart
+      return;
+     }
+
+   ENUM_TP_MODE m = KindToMode(kind);
    if(m == TP_NONE)
       return;
    if(g_mode == m && g_var == idx)
@@ -714,8 +846,7 @@ void FireAlarm(const string name, const double bid, const double zl, const doubl
 
    if(InpAlarmOnce)
      {
-      ObjectSetString(0, name, OBJPROP_TEXT, TXT_ALARM_OFF);
-      ObjectSetString(0, name, OBJPROP_TOOLTIP, "Alarm-Rechteck (ausgelöst)");
+      ObjectSetString(0, name, OBJPROP_TOOLTIP, TT_ALARM_OFF);
       ObjectSetInteger(0, name, OBJPROP_FILL, false);
       ObjectSetInteger(0, name, OBJPROP_BACK, false);
       ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DOT);
@@ -746,7 +877,7 @@ void CheckAlarms()
       string name = ObjectName(0, i, 0, OBJ_RECTANGLE);
       if(StringFind(name, PFX_ALARM) != 0)
          continue;   // nur echte Alarm-Rechtecke, alle anderen Rechtecke ignorieren
-      if(InpAlarmOnce && ObjectGetString(0, name, OBJPROP_TEXT) == TXT_ALARM_OFF)
+      if(InpAlarmOnce && ObjectGetString(0, name, OBJPROP_TOOLTIP) == TT_ALARM_OFF)
          continue;
 
       double zl = MathMin(ObjectGetDouble(0, name, OBJPROP_PRICE, 0), ObjectGetDouble(0, name, OBJPROP_PRICE, 1));
@@ -826,10 +957,16 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       int L = StringLen(sparam);
       if(StringFind(sparam, PFX_TRI) == 0 && L > 3)
         {
-         string suf = StringSubstr(sparam, L - 3);
-         if(suf == "_AB" || suf == "_BC")
+         string suf  = StringSubstr(sparam, L - 3);
+         string base = StringSubstr(sparam, 0, L - 3);
+         if(suf == "_AB")
            {
-            Trident_Rebuild(StringSubstr(sparam, 0, L - 3));
+            Trident_Rebuild(base, false);   // A oder B (oder die ganze Linie) bewegt: C folgt dem Verhältnis
+            ChartRedraw();
+           }
+         else if(suf == "_BC")
+           {
+            Trident_Rebuild(base, true);    // C bewegt: neue Lage von C übernehmen
             ChartRedraw();
            }
         }
