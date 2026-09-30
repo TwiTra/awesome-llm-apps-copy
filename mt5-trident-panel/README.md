@@ -13,33 +13,50 @@ Trendlinien und Candle-Countdown. Oben rechts im Panel sitzt die Minimieren-Tast
 
 | Bereich im Panel | Funktion |
 |---|---|
-| 6 Tasten links (3 × 2) | **Rechteck mit Alarm** |
-| 4 Tasten (2 × 2) | **Rechteck normal**, ohne Alarm |
+| 6 Tasten links (3 × 2) | **Rechteck mit Alarm**, erscheint sofort im Chart |
+| 4 Tasten (2 × 2) | **Rechteck normal**, ohne Alarm, erscheint sofort im Chart |
 | 4 Tasten (2 × 2) | **Dreizack**, erscheint sofort im Chart |
 | blaues Feld rechts | **Candle-Countdown** (Restzeit der aktuellen Kerze) |
-| 4 schmale Tasten darunter | **Trendlinie** |
+| 4 schmale Tasten darunter | **Trendlinie**, erscheint sofort im Chart |
 | `_` / `+` oben rechts | Panel minimieren / wiederherstellen |
 
-**Rechtecke und Trendlinien:** Taste anklicken, dann **zwei Klicks auf den Chart**. Die Taste ist rot umrandet
-und die Titelzeile zeigt den Schritt. Ein zweiter Klick auf dieselbe Taste oder **ESC** bricht ab. Die Farbe
-des Objekts ist die Farbe der Taste. Alle Objekte lassen sich danach wie normale MT5-Objekte verschieben,
-ändern und löschen.
+**Alle Tasten funktionieren gleich:** Ein Tastendruck legt das Objekt **sofort** in den sichtbaren Chart,
+ausgewählt mit Anfassern. Du ziehst es dann mit der Maus an die richtige Stelle und in die richtige Größe.
+Es sind keine Klicks auf den Chart nötig. Jeder Tastendruck erzeugt ein neues Objekt.
 
-**Dreizack:** siehe unten. Ein Tastendruck genügt, es sind keine Klicks auf den Chart nötig.
+| Objekt | erscheint | Startgröße (einstellbar) |
+|---|---|---|
+| Rechteck (mit/ohne Alarm) | bei 45 % der Chartbreite, senkrecht mittig | 30 Kerzen × 60 px (`InpRectBars`, `InpRectHeight`) |
+| Trendlinie | ab 40 % der Chartbreite, im oberen Drittel | 30 Kerzen lang, 60 px steigend (`InpTrendBars`, `InpTrendRise`) |
+| Dreizack | ab 35 % der Chartbreite, im unteren Viertel | Impuls 4 Kerzen × 130 px (`InpTridentBars`, `InpTridentHeight`) |
+
+Die Farbe des Objekts ist die Farbe der Taste. Alle Objekte lassen sich wie normale MT5-Objekte verschieben,
+ändern und löschen. Bei einem flachen Chartfenster werden die Starthöhen automatisch verkleinert.
 
 Minimiert bleibt nur eine schmale Leiste mit dem Countdown. Die Taste bleibt an derselben Stelle. Der Zustand
 bleibt bei Zeitrahmenwechsel und Neustart erhalten.
 
 ## Position
 
-Das Panel sitzt standardmäßig **oben rechts** und behält beim Vergrößern oder Verkleinern des Chartfensters
-automatisch denselben Abstand zum rechten und oberen Rand. Das gilt auch minimiert: Die Taste `_` / `+` bleibt
-immer an derselben Stelle. Bei sehr schmalem Fenster klemmt das Panel am linken Rand.
+Einstellung *1 | Position des Panels → Art der Positionierung*:
 
-- Einstellung *1 | Position des Panels*: `Oben rechts` (Standard) oder `Oben links` mit festem Abstand.
-- `InpPanelX` ist der Abstand zum rechten bzw. linken Rand, `InpPanelY` der Abstand von oben.
-- Falls das Panel bei dir die Preisskala am rechten Rand überdeckt oder zu weit links sitzt, ändere `InpPanelX`.
-- Beim Ziehen am Fensterrand zieht das Panel nach, sobald MetaTrader die neue Fenstergröße meldet.
+**Feste Position (Ecke)** – Standard
+- Ecke wählbar: **oben rechts** (Standard), oben links, unten rechts, unten links.
+- `InpPanelX` = Abstand zum seitlichen Rand, `InpPanelY` = Abstand zum oberen bzw. unteren Rand (Pixel).
+- Beim Vergrößern oder Verkleinern des Fensters bleibt der Abstand zu dieser Ecke gleich.
+
+**Eingabe X/Y**
+- `InpPosX` und `InpPosY` in **Prozent des Chartfensters**: X = 0 ganz links, 100 ganz rechts, Y = 0 ganz oben,
+  100 ganz unten. Beispiele: 100/3 = oben rechts, 50/50 = Mitte, 0/100 = unten links.
+- Weil die Angabe in Prozent ist, wandert das Panel beim Vergrößern oder Verkleinern mit und behält seine
+  relative Lage (bei 50/50 bleibt es in der Mitte). Es bleibt dabei immer ganz sichtbar.
+
+Für beide Arten gilt:
+- Minimiert bleibt die Taste `_` / `+` an derselben Stelle. Bei den unteren Ecken schwebt die minimierte Leiste
+  daher dort, wo vorher die Oberkante des Panels war.
+- Ist das Fenster kleiner als das Panel, klemmt es am linken bzw. oberen Rand.
+- Das Panel zieht nach, sobald MetaTrader die neue Fenstergröße meldet (spätestens nach 0,25 s).
+- Falls das Panel bei dir die Preisskala am rechten Rand überdeckt, vergrößere `InpPanelX` bzw. verkleinere `InpPosX`.
 
 ## Einstellungen (Inputs)
 
@@ -47,15 +64,15 @@ immer an derselben Stelle. Bei sehr schmalem Fenster klemmt das Panel am linken 
 
 | Gruppe | Inhalt |
 |---|---|
-| 1 \| Position des Panels | oben rechts / oben links, Abstände |
+| 1 \| Position des Panels | Feste Position (Ecke) oder Eingabe X/Y, Ecke, Abstände, X/Y in % |
 | 2 \| Farben: Rechtecke mit Alarm | Farbe jeder der 6 Tasten (Reihenfolge wie im Panel) |
 | 3 \| Farben: Rechtecke normal | Farbe jeder der 4 Tasten |
 | 4 \| Farben: Dreizack | Farbe jeder der 4 Tasten |
 | 5 \| Farben: Trendlinien | Farbe jeder der 4 schmalen Tasten |
-| 6 \| Rechtecke | Rahmenbreite, Füllung |
+| 6 \| Rechtecke | Rahmenbreite, Füllung, Startgröße neuer Rechtecke |
 | 7 \| Alarm | Popup, Sound, Push, einmalig, Zeitbereich |
 | 8 \| Dreizack | Startgröße, Linienbreite (Standard 2), Info-Text, grüne Zone, Ziellinien |
-| 9 \| Trendlinien | Linienbreite, Strahl nach rechts |
+| 9 \| Trendlinien | Linienbreite, Strahl nach rechts, Startlänge und -anstieg neuer Trendlinien |
 
 Die Farbe einer Taste ist zugleich die Farbe des Objekts, das sie zeichnet. Eine Änderung wirkt für neu
 gezeichnete Objekte. Bereits gezeichnete Objekte behalten ihre Farbe.
@@ -101,7 +118,7 @@ wie in deinem ersten Screenshot. Standardmäßig ist das aus, weil die Vorlage s
 - Der Alarm gilt **nur für Rechtecke, die mit den 6 Alarm-Tasten gezeichnet wurden** (Objektname `TP_ALR_…`).
   Normale Rechtecke, Trendlinien und von Hand gezeichnete Rechtecke lösen nie aus.
 - Ausgelöst wird, wenn der Preis von außen in das Rechteck **eintritt oder es durchquert**. Liegt der Preis
-  beim Zeichnen schon im Rechteck, kommt kein Alarm, bis er es verlassen und wieder betreten hat.
+  beim Erzeugen oder Hinziehen schon im Rechteck, kommt kein Alarm, bis er es verlassen und wieder betreten hat.
 - Standard: einmalig. Danach wird das Rechteck gestrichelt und ungefüllt (`InpAlarmOnce = false` löst bei jedem Eintritt aus).
 - Kanäle: Popup, eigener Sound, Push aufs Handy (Eingaben unter *Alarm*).
 - Standardmäßig zählt nur die Preiszone. Mit `InpAlarmTimeRange = true` löst das Rechteck nur aus, solange die Zeit im Rechteck liegt.

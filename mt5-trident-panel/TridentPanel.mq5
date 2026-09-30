@@ -4,23 +4,34 @@
 //|  Trendlinien und Candle-Countdown mit Minimieren-Taste.          |
 //+------------------------------------------------------------------+
 #property copyright   "TridentPanel"
-#property version     "1.20"
+#property version     "1.30"
 #property description "Panel mit Rechtecken (normal / mit Alarm), Dreizack, Trendlinien und Candle-Countdown"
 #property indicator_chart_window
 #property indicator_plots 0
 
 //--- Position des Panels -------------------------------------------
-enum ENUM_TP_POS
+enum ENUM_TP_POSMODE
   {
-   TP_POS_RIGHT = 0,   // Oben rechts (folgt automatisch der Fensterbreite)
-   TP_POS_LEFT  = 1    // Oben links (fester Abstand)
+   TP_POSMODE_FIXED = 0,   // Feste Position (Ecke)
+   TP_POSMODE_XY    = 1    // Eingabe X/Y (in % des Chartfensters)
+  };
+
+enum ENUM_TP_CORNER
+  {
+   TP_CORNER_RIGHT_UPPER = 0,   // Oben rechts
+   TP_CORNER_LEFT_UPPER  = 1,   // Oben links
+   TP_CORNER_RIGHT_LOWER = 2,   // Unten rechts
+   TP_CORNER_LEFT_LOWER  = 3    // Unten links
   };
 
 //--- Eingaben -------------------------------------------------------
 input group "1 | Position des Panels"
-input ENUM_TP_POS InpPanelPos    = TP_POS_RIGHT; // Position
-input int    InpPanelX           = 10;           // Abstand zum rechten bzw. linken Rand (px)
-input int    InpPanelY           = 25;           // Abstand von oben (px)
+input ENUM_TP_POSMODE InpPosMode   = TP_POSMODE_FIXED;      // Art der Positionierung
+input ENUM_TP_CORNER  InpPosCorner = TP_CORNER_RIGHT_UPPER; // Feste Position: Ecke
+input int    InpPanelX           = 10;           // Feste Position: Abstand zum seitlichen Rand (px)
+input int    InpPanelY           = 25;           // Feste Position: Abstand zum oberen bzw. unteren Rand (px)
+input double InpPosX             = 100.0;        // Eingabe X/Y: X in % (0 = ganz links, 100 = ganz rechts)
+input double InpPosY             = 3.0;          // Eingabe X/Y: Y in % (0 = ganz oben, 100 = ganz unten)
 
 input group "2 | Farben: Rechtecke mit Alarm (6 Tasten)"
 input color  InpClrAlarm1        = C'112,173,71';  // Taste 1 (oben links)
@@ -52,6 +63,8 @@ input group "6 | Rechtecke"
 input int    InpRectWidth        = 1;            // Rahmenbreite
 input bool   InpFillAlarm        = true;         // Alarm-Rechtecke ausfüllen
 input bool   InpFillNormal       = false;        // Normale Rechtecke ausfüllen
+input int    InpRectBars         = 30;           // Startbreite neuer Rechtecke (Kerzen)
+input int    InpRectHeight       = 60;           // Starthöhe neuer Rechtecke (Pixel)
 
 input group "7 | Alarm (gilt nur für Alarm-Rechtecke)"
 input bool   InpAlarmPopup       = true;         // Popup-Fenster (Alert)
@@ -76,6 +89,8 @@ input int    InpLevelWidth       = 2;            // Linienbreite der Ziellinien
 input group "9 | Trendlinien"
 input int    InpTrendWidth       = 1;            // Linienbreite
 input bool   InpTrendRay         = false;        // Strahl nach rechts
+input int    InpTrendBars        = 30;           // Startlänge neuer Trendlinien (Kerzen)
+input int    InpTrendRise        = 60;           // Startanstieg neuer Trendlinien (Pixel; negativ = fallend)
 
 //--- Objektnamen ----------------------------------------------------
 #define PFX_UI      "TP_UI_"
@@ -135,20 +150,12 @@ void Colors_Init()
    CLR_TREND[0] = InpClrTrend1;  CLR_TREND[1] = InpClrTrend2;  CLR_TREND[2] = InpClrTrend3; CLR_TREND[3] = InpClrTrend4;
   }
 
-//--- Zeichenmodus (Rechtecke und Trendlinien: Taste, dann 2 Klicks) --
-enum ENUM_TP_MODE { TP_NONE = 0, TP_RECT_ALARM, TP_RECT_NORMAL, TP_TREND };
-
 bool         g_min         = false;     // Panel minimiert?
-ENUM_TP_MODE g_mode        = TP_NONE;   // aktive Zeichentaste
-int          g_var         = -1;        // Index der aktiven Taste
-int          g_step        = 0;         // 0 = wartet auf 1. Klick, 1 = wartet auf 2. Klick
-string       g_obj         = "";        // Vorschauobjekt während des Zeichnens
-bool         g_mouse_saved = false;
-long         g_mouse_prev  = 0;
 double       g_last_bid    = 0.0;
 string       g_last_cd     = "";
 ulong        g_seq         = 0;
 int          g_ox          = -100000;   // aktuelle linke Kante des Panels (für Panel_Follow)
+int          g_oy          = -100000;   // aktuelle obere Kante des Panels (für Panel_Follow)
 
 //+------------------------------------------------------------------+
 //| Hilfsfunktionen                                                  |
@@ -170,20 +177,14 @@ string NewBase(const string prefix, const string suffix)
    return prefix + id;
   }
 
-string ModeKind(const ENUM_TP_MODE m)
+int ClampI(const int v, const int lo, const int hi)
   {
-   if(m == TP_RECT_ALARM)  return "A";
-   if(m == TP_RECT_NORMAL) return "N";
-   if(m == TP_TREND)       return "L";
-   return "";
-  }
-
-ENUM_TP_MODE KindToMode(const string k)
-  {
-   if(k == "A") return TP_RECT_ALARM;
-   if(k == "N") return TP_RECT_NORMAL;
-   if(k == "L") return TP_TREND;
-   return TP_NONE;
+   int r = v;
+   if(r > hi)
+      r = hi;
+   if(r < lo)
+      r = lo;   // bei zu kleinem Fenster hat der linke/obere Rand Vorrang
+   return r;
   }
 
 string BtnName(const string kind, const int idx)
@@ -279,58 +280,44 @@ void UiLabel(const string name, const int x, const int y, const string text, con
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 2);
   }
 
+//--- Lage des Panels aus der Fenstergröße berechnen (wird bei jeder Größenänderung neu aufgerufen)
 void Panel_Rect(int &ox, int &oy, int &w, int &h)
   {
-   w  = g_min ? MIN_W : PANEL_W;
-   h  = g_min ? MIN_H : PANEL_H;
-   oy = InpPanelY;
-   if(InpPanelPos == TP_POS_RIGHT)
+   const int cw = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   const int ch = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0);
+
+   int fx, fy;   // linke obere Ecke des vollständigen Panels
+   if(InpPosMode == TP_POSMODE_XY)
      {
-      // oben rechts: Abstand zum rechten Rand bleibt bei jeder Fensterbreite gleich
-      ox = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS) - w - InpPanelX;
-      if(ox < 0)
-         ox = 0;
+      // Prozent des freien Platzes: 0 % = linker/oberer Rand, 100 % = rechter/unterer Rand.
+      // Dadurch bleibt die relative Lage beim Vergrößern/Verkleinern gleich und das Panel immer ganz sichtbar.
+      const double px = MathMax(0.0, MathMin(100.0, InpPosX)) / 100.0;
+      const double py = MathMax(0.0, MathMin(100.0, InpPosY)) / 100.0;
+      fx = (int)MathRound((cw - PANEL_W) * px);
+      fy = (int)MathRound((ch - PANEL_H) * py);
      }
    else
-      ox = InpPanelX + (g_min ? PANEL_W - MIN_W : 0);   // minimiert: Taste bleibt an derselben Stelle
-  }
+     {
+      // feste Ecke: Abstand zu den beiden Rändern dieser Ecke bleibt bei jeder Fenstergröße gleich
+      const bool right  = (InpPosCorner == TP_CORNER_RIGHT_UPPER || InpPosCorner == TP_CORNER_RIGHT_LOWER);
+      const bool bottom = (InpPosCorner == TP_CORNER_RIGHT_LOWER || InpPosCorner == TP_CORNER_LEFT_LOWER);
+      fx = right  ? cw - PANEL_W - InpPanelX : InpPanelX;
+      fy = bottom ? ch - PANEL_H - InpPanelY : InpPanelY;
+     }
+   fx = ClampI(fx, 0, cw - PANEL_W);
+   fy = ClampI(fy, 0, ch - PANEL_H);
 
-bool InPanel(const int x, const int y)
-  {
-   int ox, oy, w, h;
-   Panel_Rect(ox, oy, w, h);
-   return (x >= ox && x <= ox + w && y >= oy && y <= oy + h);
-  }
-
-string StatusText()
-  {
-   string n = IntegerToString(g_step + 1) + "/2";
-   if(g_mode == TP_RECT_ALARM)  return "Alarm-Rechteck: Klick " + n + "  (ESC = Abbruch)";
-   if(g_mode == TP_RECT_NORMAL) return "Rechteck: Klick " + n + "  (ESC = Abbruch)";
-   if(g_mode == TP_TREND)       return "Trendlinie: Klick " + n + "  (ESC = Abbruch)";
-   return "Trident Panel";
+   w  = g_min ? MIN_W : PANEL_W;
+   h  = g_min ? MIN_H : PANEL_H;
+   ox = fx;
+   oy = fy;
+   if(g_min)   // minimiert: rechter Teil der Titelleiste, die Taste bleibt an derselben Stelle
+      ox = ClampI(fx + PANEL_W - MIN_W, 0, cw - MIN_W);
   }
 
 void Title_Update()
   {
-   string s = g_min ? g_last_cd : StatusText();
-   ObjectSetString(0, NM_TITLE, OBJPROP_TEXT, s);
-  }
-
-void Buttons_Refresh()
-  {
-   if(g_min)
-      return;
-   string kinds[4] = { "A", "N", "T", "L" };
-   int    counts[4] = { 6, 4, 4, 4 };
-   for(int k = 0; k < 4; k++)
-      for(int i = 0; i < counts[k]; i++)
-        {
-         string nm = BtnName(kinds[k], i);
-         bool   on = (g_mode != TP_NONE && kinds[k] == ModeKind(g_mode) && i == g_var);
-         ObjectSetInteger(0, nm, OBJPROP_STATE, on);
-         ObjectSetInteger(0, nm, OBJPROP_BORDER_COLOR, on ? C'220,0,0' : C'90,90,90');
-        }
+   ObjectSetString(0, NM_TITLE, OBJPROP_TEXT, g_min ? g_last_cd : "Trident Panel");
   }
 
 //+------------------------------------------------------------------+
@@ -402,6 +389,7 @@ void Panel_Build()
    int ox, oy, w, h;
    Panel_Rect(ox, oy, w, h);
    g_ox = ox;
+   g_oy = oy;
 
    UiRect(NM_BG, ox, oy, w, h, C'225,225,225', C'150,150,150');
    UiLabel(NM_TITLE, ox + PAD, oy + 4, "Trident Panel", C'40,40,40', 8, "Arial", ANCHOR_LEFT_UPPER);
@@ -413,13 +401,13 @@ void Panel_Build()
       // Gruppe 1: Rechtecke mit Alarm (3 x 2)
       for(int i = 0; i < 6; i++)
          UiButton(BtnName("A", i), ox + GX_ALARM + (i % 3) * (BTN + GAP), oy + (i < 3 ? ROW0 : ROW1),
-                  BTN, BTN, CLR_ALARM[i], "", "Rechteck MIT Alarm (löst aus, wenn der Preis das Rechteck berührt)");
+                  BTN, BTN, CLR_ALARM[i], "", "Rechteck MIT Alarm erzeugen (erscheint sofort im Chart; löst aus, wenn der Preis es berührt)");
       UiRect(NM_SEP1, ox + 91, oy + ROW0, 1, 52, C'160,160,160', C'160,160,160');
 
       // Gruppe 2: normale Rechtecke (2 x 2)
       for(int i = 0; i < 4; i++)
          UiButton(BtnName("N", i), ox + GX_NORMAL + (i % 2) * (BTN + GAP), oy + (i < 2 ? ROW0 : ROW1),
-                  BTN, BTN, CLR_NORMAL[i], "", "Rechteck normal (ohne Alarm)");
+                  BTN, BTN, CLR_NORMAL[i], "", "Rechteck erzeugen, ohne Alarm (erscheint sofort im Chart)");
       UiRect(NM_SEP2, ox + 154, oy + ROW0, 1, 52, C'160,160,160', C'160,160,160');
 
       // Gruppe 3: Dreizack (2 x 2)
@@ -434,30 +422,35 @@ void Panel_Build()
               "Arial Bold", ANCHOR_CENTER);
       for(int i = 0; i < 4; i++)
          UiButton(BtnName("L", i), ox + GX_TIMER + i * (TREND_W + GAP), oy + TREND_Y,
-                  TREND_W, TREND_H, CLR_TREND[i], "", "Trendlinie");
+                  TREND_W, TREND_H, CLR_TREND[i], "", "Trendlinie erzeugen (erscheint sofort im Chart)");
      }
 
    Countdown_Refresh(true);
-   Buttons_Refresh();
    Title_Update();
   }
 
-// Panel an die aktuelle Fensterbreite anpassen (oben rechts): alle Panel-Objekte um dieselbe Strecke verschieben
+// Panel an die aktuelle Fenstergröße anpassen: alle Panel-Objekte um dieselbe Strecke verschieben
 void Panel_Follow()
   {
    if(g_ox == -100000)
       return;   // Panel noch nicht aufgebaut
    int ox, oy, w, h;
    Panel_Rect(ox, oy, w, h);
-   if(ox == g_ox)
+   if(ox == g_ox && oy == g_oy)
       return;
    const int dx = ox - g_ox;
+   const int dy = oy - g_oy;
    g_ox = ox;
+   g_oy = oy;
    for(int i = ObjectsTotal(0, 0) - 1; i >= 0; i--)
      {
       const string nm = ObjectName(0, i, 0);
-      if(StringFind(nm, PFX_UI) == 0)
+      if(StringFind(nm, PFX_UI) != 0)
+         continue;
+      if(dx != 0)
          ObjectSetInteger(0, nm, OBJPROP_XDISTANCE, ObjectGetInteger(0, nm, OBJPROP_XDISTANCE) + dx);
+      if(dy != 0)
+         ObjectSetInteger(0, nm, OBJPROP_YDISTANCE, ObjectGetInteger(0, nm, OBJPROP_YDISTANCE) + dy);
      }
    ChartRedraw();
   }
@@ -486,9 +479,10 @@ void SaveMinState()
 //+------------------------------------------------------------------+
 //| Zeichen-Objekte                                                  |
 //+------------------------------------------------------------------+
-void CreateRect(const string name, const datetime t, const double p, const color clr, const bool alarm)
+void CreateRect(const string name, const datetime t1, const double p1, const datetime t2, const double p2,
+                const color clr, const bool alarm)
   {
-   if(!ObjectCreate(0, name, OBJ_RECTANGLE, 0, t, p, t, p))
+   if(!ObjectCreate(0, name, OBJ_RECTANGLE, 0, t1, p1, t2, p2))
       return;
    const bool fill = alarm ? InpFillAlarm : InpFillNormal;
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
@@ -496,8 +490,8 @@ void CreateRect(const string name, const datetime t, const double p, const color
    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, name, OBJPROP_FILL, fill);
    ObjectSetInteger(0, name, OBJPROP_BACK, fill);
-   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
-   ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED, true);   // Anfasser sofort sichtbar
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
    ObjectSetString(0, name, OBJPROP_TOOLTIP, alarm ? TT_ALARM_ON : "Rechteck");
   }
@@ -798,102 +792,57 @@ void Trident_Create(const int idx)
   }
 
 //+------------------------------------------------------------------+
-//| Zeichenmodus für Rechtecke und Trendlinien                       |
+//| Rechtecke und Trendlinien sofort im sichtbaren Chart erzeugen     |
+//| (wie der Dreizack: ausgewählt, danach mit der Maus anpassen)      |
 //+------------------------------------------------------------------+
-void Cancel()
+bool ChartPoint(const int x, const int y, datetime &t, double &p)
   {
-   if(g_step == 1 && g_obj != "")
-      ObjectDelete(0, g_obj);
-   g_mode = TP_NONE;
-   g_var  = -1;
-   g_step = 0;
-   g_obj  = "";
-   if(g_mouse_saved)
-     {
-      ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, g_mouse_prev);
-      g_mouse_saved = false;
-     }
-   Buttons_Refresh();
-   Title_Update();
-   ChartRedraw();
+   int sub;
+   return (ChartXYToTimePrice(0, x, y, sub, t, p) && sub == 0);
   }
 
-void Arm(const ENUM_TP_MODE mode, const int idx)
+void Rect_Create(const bool alarm, const int idx)
   {
-   Cancel();
-   g_mode = mode;
-   g_var  = idx;
-   g_step = 0;
-   if(!g_mouse_saved)
-     {
-      g_mouse_prev  = ChartGetInteger(0, CHART_EVENT_MOUSE_MOVE);
-      g_mouse_saved = true;
-     }
-   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true);
-   Buttons_Refresh();
-   Title_Update();
-   ChartRedraw();
-  }
+   const int cw = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   const int ch = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0);
+   int hpx = MathMin(InpRectHeight, ch / 3);
+   if(hpx < 10)
+      hpx = 10;
+   const int x  = (int)(cw * 0.45);
+   const int y1 = ch / 2 - hpx / 2;   // senkrecht mittig im Chart
 
-void StartDrawing(const datetime t, const double p)
-  {
-   switch(g_mode)
-     {
-      case TP_RECT_ALARM:
-         g_obj = NewBase(PFX_ALARM, "");
-         CreateRect(g_obj, t, p, CLR_ALARM[g_var], true);
-         break;
-      case TP_RECT_NORMAL:
-         g_obj = NewBase(PFX_RECT, "");
-         CreateRect(g_obj, t, p, CLR_NORMAL[g_var], false);
-         break;
-      case TP_TREND:
-         g_obj = NewBase(PFX_TREND, "");
-         PutTrend(g_obj, t, p, t, p, CLR_TREND[g_var], InpTrendWidth, InpTrendRay, false, false);
-         break;
-      default:
-         return;
-     }
-   g_step = 1;
-   Title_Update();
-   ChartRedraw();
-  }
-
-void FinishDrawing(const datetime t, const double p)
-  {
-   ObjectMove(0, g_obj, 1, t, p);
-   ObjectSetInteger(0, g_obj, OBJPROP_SELECTABLE, true);
-   ObjectSetInteger(0, g_obj, OBJPROP_SELECTED, false);
-   g_step = 0;     // Objekt bleibt stehen -> Cancel() löscht nichts
-   Cancel();
-  }
-
-void OnChartClickXY(const int x, const int y)
-  {
-   if(g_mode == TP_NONE || InPanel(x, y))
+   datetime t1, tdummy;
+   double   p1, p2;
+   if(!ChartPoint(x, y1, t1, p1) || !ChartPoint(x, y1 + hpx, tdummy, p2))
       return;
-   int      sub;
-   datetime t;
-   double   p;
-   if(!ChartXYToTimePrice(0, x, y, sub, t, p) || sub != 0)
-      return;
-   if(g_step == 0)
-      StartDrawing(t, p);
-   else
-      FinishDrawing(t, p);
+   const double x1   = BarPos(t1);
+   const string name = NewBase(alarm ? PFX_ALARM : PFX_RECT, "");
+   CreateRect(name, PosToTime(x1), p1, PosToTime(x1 + MathMax(1, InpRectBars)), p2,
+              alarm ? CLR_ALARM[idx] : CLR_NORMAL[idx], alarm);
   }
 
-void OnMouseMoveXY(const int x, const int y)
+void Trend_Create(const int idx)
   {
-   if(g_mode == TP_NONE || g_step != 1 || g_obj == "")
+   const int cw = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   const int ch = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0);
+   int rise = InpTrendRise;
+   if(rise > ch / 3)
+      rise = ch / 3;
+   if(rise < -ch / 3)
+      rise = -ch / 3;
+   const int x  = (int)(cw * 0.40);
+   const int y1 = (int)(ch * 0.40) + rise / 2;   // Startpunkt; Endpunkt liegt "rise" Pixel höher
+
+   datetime t1, tdummy;
+   double   p1, p2;
+   if(!ChartPoint(x, y1, t1, p1) || !ChartPoint(x, y1 - rise, tdummy, p2))
       return;
-   int      sub;
-   datetime t;
-   double   p;
-   if(!ChartXYToTimePrice(0, x, y, sub, t, p) || sub != 0)
-      return;
-   ObjectMove(0, g_obj, 1, t, p);
-   ChartRedraw();
+   const double x1   = BarPos(t1);
+   const string name = NewBase(PFX_TREND, "");
+   PutTrend(name, PosToTime(x1), p1, PosToTime(x1 + MathMax(1, InpTrendBars)), p2,
+            CLR_TREND[idx], InpTrendWidth, InpTrendRay, true, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED, true);   // Anfasser sofort sichtbar
+   ObjectSetString(0, name, OBJPROP_TOOLTIP, "Trendlinie");
   }
 
 void OnPanelObject(const string name)
@@ -909,23 +858,19 @@ void OnPanelObject(const string name)
      }
    if(StringSubstr(s, 0, 4) != "BTN_")
       return;
-   string kind = StringSubstr(s, 4, 1);
-   int    idx  = (int)StringToInteger(StringSubstr(s, 5));
+   ObjectSetInteger(0, name, OBJPROP_STATE, false);   // Taste springt sofort wieder heraus
 
-   if(kind == "T")
-     {
-      Cancel();               // laufenden Zeichenvorgang beenden, Taste zurücksetzen
-      Trident_Create(idx);    // Dreizack erscheint sofort im Chart
-      return;
-     }
-
-   ENUM_TP_MODE m = KindToMode(kind);
-   if(m == TP_NONE)
-      return;
-   if(g_mode == m && g_var == idx)
-      Cancel();       // zweiter Klick auf dieselbe Taste = Abbruch
-   else
-      Arm(m, idx);
+   const string kind = StringSubstr(s, 4, 1);
+   const int    idx  = (int)StringToInteger(StringSubstr(s, 5));
+   if(kind == "A" && idx >= 0 && idx < 6)
+      Rect_Create(true, idx);
+   else if(kind == "N" && idx >= 0 && idx < 4)
+      Rect_Create(false, idx);
+   else if(kind == "T" && idx >= 0 && idx < 4)
+      Trident_Create(idx);
+   else if(kind == "L" && idx >= 0 && idx < 4)
+      Trend_Create(idx);
+   ChartRedraw();
   }
 
 //+------------------------------------------------------------------+
@@ -1017,7 +962,6 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    EventKillTimer();
-   Cancel();
    ObjectsDeleteAll(0, PFX_UI);
    if(reason == REASON_REMOVE)
       ObjectDelete(0, NM_STATE);
@@ -1046,17 +990,8 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(StringFind(sparam, PFX_UI) == 0)
          OnPanelObject(sparam);
      }
-   else if(id == CHARTEVENT_CLICK)
-      OnChartClickXY((int)lparam, (int)dparam);
-   else if(id == CHARTEVENT_MOUSE_MOVE)
-      OnMouseMoveXY((int)lparam, (int)dparam);
-   else if(id == CHARTEVENT_KEYDOWN)
-     {
-      if(lparam == 27 && g_mode != TP_NONE)   // ESC
-         Cancel();
-     }
    else if(id == CHARTEVENT_CHART_CHANGE)
-      Panel_Follow();   // Fenster wurde breiter/schmaler: Panel bleibt oben rechts
+      Panel_Follow();   // Fenster wurde größer/kleiner: Panel behält seine Position
    else if(id == CHARTEVENT_OBJECT_DRAG || id == CHARTEVENT_OBJECT_CHANGE)
      {
       int L = StringLen(sparam);
