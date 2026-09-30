@@ -30,6 +30,36 @@ des Objekts ist die Farbe der Taste. Alle Objekte lassen sich danach wie normale
 Minimiert bleibt nur eine schmale Leiste mit dem Countdown. Die Taste bleibt an derselben Stelle. Der Zustand
 bleibt bei Zeitrahmenwechsel und Neustart erhalten.
 
+## Position
+
+Das Panel sitzt standardmäßig **oben rechts** und behält beim Vergrößern oder Verkleinern des Chartfensters
+automatisch denselben Abstand zum rechten und oberen Rand. Das gilt auch minimiert: Die Taste `_` / `+` bleibt
+immer an derselben Stelle. Bei sehr schmalem Fenster klemmt das Panel am linken Rand.
+
+- Einstellung *1 | Position des Panels*: `Oben rechts` (Standard) oder `Oben links` mit festem Abstand.
+- `InpPanelX` ist der Abstand zum rechten bzw. linken Rand, `InpPanelY` der Abstand von oben.
+- Falls das Panel bei dir die Preisskala am rechten Rand überdeckt oder zu weit links sitzt, ändere `InpPanelX`.
+- Beim Ziehen am Fensterrand zieht das Panel nach, sobald MetaTrader die neue Fenstergröße meldet.
+
+## Einstellungen (Inputs)
+
+Übersichtlich in nummerierte Gruppen sortiert:
+
+| Gruppe | Inhalt |
+|---|---|
+| 1 \| Position des Panels | oben rechts / oben links, Abstände |
+| 2 \| Farben: Rechtecke mit Alarm | Farbe jeder der 6 Tasten (Reihenfolge wie im Panel) |
+| 3 \| Farben: Rechtecke normal | Farbe jeder der 4 Tasten |
+| 4 \| Farben: Dreizack | Farbe jeder der 4 Tasten |
+| 5 \| Farben: Trendlinien | Farbe jeder der 4 schmalen Tasten |
+| 6 \| Rechtecke | Rahmenbreite, Füllung |
+| 7 \| Alarm | Popup, Sound, Push, einmalig, Zeitbereich |
+| 8 \| Dreizack | Startgröße, Linienbreite (Standard 2), Info-Text, grüne Zone, Ziellinien |
+| 9 \| Trendlinien | Linienbreite, Strahl nach rechts |
+
+Die Farbe einer Taste ist zugleich die Farbe des Objekts, das sie zeichnet. Eine Änderung wirkt für neu
+gezeichnete Objekte. Bereits gezeichnete Objekte behalten ihre Farbe.
+
 ## Dreizack
 
 Ein Druck auf eine der 4 Dreizack-Tasten legt den Dreizack **sofort** in den sichtbaren Chartbereich, ausgewählt
@@ -49,7 +79,16 @@ Aufbau (aus deinen Screenshots auf 1 px genau nachgemessen), mit **L = A→B** u
 | mittlere Zinke | C | C + 2·L |
 | rechte Zinke | B + L + 2·R | B + 2·L + 2·R |
 | Diagonale | B + L | B + L + 2·R |
-| gestricheltes Rechteck (grün) | A, 50 Kerzen breit | bis zur Höhe von C |
+| grüne Zone (gestricheltes Rechteck) | A, zu Beginn 50 Kerzen breit | bis zur Höhe von C |
+
+**Grüne Zone (unterer Teil):** Sie lässt sich anklicken. Ziehst du ihren **rechten Rand nach rechts** (oder
+schiebst das ganze Rechteck nach rechts), wird sie länger. Die linke Kante bleibt an A und die Höhe reicht von
+A bis C. Die gewählte Breite bleibt erhalten, wenn du A, B oder C bewegst, und auch nach Zeitrahmenwechsel und
+Neustart. Ziehst du sie zu weit nach links, bleibt mindestens 1 Kerze. Startbreite: `InpBoxBars`, ausblenden:
+`InpShowBox`. A–B und B–C haben beim Anklicken Vorrang, die Zone erreichst du also an ihrer Oberkante oder am
+rechten Rand.
+
+Die Linien sind standardmäßig **2 px dick** (`InpTridentWidth`).
 
 Mit C bei 50 % liegen die Zinkenspitzen bei **1,0 / 1,5 / 2,0 × Impulshöhe** über B. Am Extrempunkt steht
 `Kerzen/Punkte` des Impulses (z. B. `4/69`).
@@ -73,7 +112,7 @@ wie in deinem ersten Screenshot. Standardmäßig ist das aus, weil die Vorlage s
   MetaEditor und nicht im Terminal**. Falls beim Kompilieren etwas gemeldet wird oder sich etwas anders verhält,
   gib mir bitte die Meldung bzw. einen Screenshot.
 - Der Dreizack wird beim Loslassen neu berechnet, nicht während des Ziehens.
-- Farben: Dreizack-Tasten blau und lila wie im Original (DeepSkyBlue, MediumPurple), gestricheltes Rechteck grün
-  (`InpBoxColor`). Die übrigen Farben stehen im Code in den Arrays `CLR_*`, die Pixelmaße des Panels als `#define`
+- Standardfarben: Dreizack-Tasten 1 und 4 wie im Original (DeepSkyBlue, MediumPurple), grüne Zone
+  `InpBoxColor`, der Rest nach deiner Skizze. Die Pixelmaße des Panels stehen als `#define` im Code
   (`BTN`, `PANEL_W` …).
 - Ein zweiter Aufruf des Indikators auf demselben Chart wird nicht unterstützt (gleiche Objektnamen).

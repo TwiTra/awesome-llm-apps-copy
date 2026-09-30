@@ -4,22 +4,56 @@
 //|  Trendlinien und Candle-Countdown mit Minimieren-Taste.          |
 //+------------------------------------------------------------------+
 #property copyright   "TridentPanel"
-#property version     "1.10"
+#property version     "1.20"
 #property description "Panel mit Rechtecken (normal / mit Alarm), Dreizack, Trendlinien und Candle-Countdown"
 #property indicator_chart_window
 #property indicator_plots 0
 
+//--- Position des Panels -------------------------------------------
+enum ENUM_TP_POS
+  {
+   TP_POS_RIGHT = 0,   // Oben rechts (folgt automatisch der Fensterbreite)
+   TP_POS_LEFT  = 1    // Oben links (fester Abstand)
+  };
+
 //--- Eingaben -------------------------------------------------------
-input group "Panel"
-input int    InpPanelX           = 10;           // Abstand von links (px)
+input group "1 | Position des Panels"
+input ENUM_TP_POS InpPanelPos    = TP_POS_RIGHT; // Position
+input int    InpPanelX           = 10;           // Abstand zum rechten bzw. linken Rand (px)
 input int    InpPanelY           = 25;           // Abstand von oben (px)
 
-input group "Rechtecke"
+input group "2 | Farben: Rechtecke mit Alarm (6 Tasten)"
+input color  InpClrAlarm1        = C'112,173,71';  // Taste 1 (oben links)
+input color  InpClrAlarm2        = C'91,155,213';  // Taste 2 (oben Mitte)
+input color  InpClrAlarm3        = C'237,125,49';  // Taste 3 (oben rechts)
+input color  InpClrAlarm4        = C'255,192,0';   // Taste 4 (unten links)
+input color  InpClrAlarm5        = C'255,0,0';     // Taste 5 (unten Mitte)
+input color  InpClrAlarm6        = C'112,48,160';  // Taste 6 (unten rechts)
+
+input group "3 | Farben: Rechtecke normal (4 Tasten)"
+input color  InpClrNormal1       = C'91,155,213';  // Taste 1 (oben links)
+input color  InpClrNormal2       = C'146,208,80';  // Taste 2 (oben rechts)
+input color  InpClrNormal3       = C'244,177,131'; // Taste 3 (unten links)
+input color  InpClrNormal4       = C'190,90,240';  // Taste 4 (unten rechts)
+
+input group "4 | Farben: Dreizack (4 Tasten)"
+input color  InpClrTri1          = C'0,191,255';   // Taste 1 (oben links)
+input color  InpClrTri2          = C'112,173,71';  // Taste 2 (oben rechts)
+input color  InpClrTri3          = C'255,192,110'; // Taste 3 (unten links)
+input color  InpClrTri4          = C'147,112,219'; // Taste 4 (unten rechts)
+
+input group "5 | Farben: Trendlinien (4 schmale Tasten)"
+input color  InpClrTrend1        = C'91,155,213';  // Taste 1 (links)
+input color  InpClrTrend2        = C'112,173,71';  // Taste 2
+input color  InpClrTrend3        = C'237,125,49';  // Taste 3
+input color  InpClrTrend4        = C'190,90,240';  // Taste 4 (rechts)
+
+input group "6 | Rechtecke"
 input int    InpRectWidth        = 1;            // Rahmenbreite
 input bool   InpFillAlarm        = true;         // Alarm-Rechtecke ausfüllen
 input bool   InpFillNormal       = false;        // Normale Rechtecke ausfüllen
 
-input group "Alarm (gilt nur für Alarm-Rechtecke)"
+input group "7 | Alarm (gilt nur für Alarm-Rechtecke)"
 input bool   InpAlarmPopup       = true;         // Popup-Fenster (Alert)
 input bool   InpAlarmSound       = false;        // Zusätzlich eigene Sound-Datei abspielen
 input string InpAlarmSoundFile   = "alert2.wav"; // Sound-Datei (Ordner MQL5\Sounds bzw. Sounds)
@@ -27,19 +61,19 @@ input bool   InpAlarmPush        = false;        // Push-Nachricht aufs Handy
 input bool   InpAlarmOnce        = true;         // Nur einmal auslösen (danach Rechteck gestrichelt)
 input bool   InpAlarmTimeRange   = false;        // Nur auslösen, solange die Zeit im Rechteck liegt
 
-input group "Dreizack"
+input group "8 | Dreizack"
 input int    InpTridentBars      = 4;            // Startbreite des Impulses A-B (Kerzen)
 input int    InpTridentHeight    = 130;          // Starthöhe des Impulses A-B (Pixel)
-input int    InpTridentWidth     = 1;            // Linienbreite
+input int    InpTridentWidth     = 2;            // Linienbreite
 input bool   InpShowInfo         = true;         // Info-Text "Kerzen/Punkte" am Extrempunkt
-input bool   InpShowBox          = true;         // Gestricheltes Rechteck von A bis zur Höhe von C
-input int    InpBoxBars          = 50;           // Breite des gestrichelten Rechtecks (Kerzen)
-input color  InpBoxColor         = clrMediumSeaGreen; // Farbe des gestrichelten Rechtecks
+input bool   InpShowBox          = true;         // Grüne Zone (gestricheltes Rechteck) anzeigen
+input int    InpBoxBars          = 50;           // Startbreite der grünen Zone (Kerzen); später per Maus ziehbar
+input color  InpBoxColor         = clrMediumSeaGreen; // Farbe der grünen Zone
 input bool   InpShowLevels       = false;        // Zusätzlich waagrechte Ziellinien 1/2/3 zeichnen
 input int    InpLevelBars        = 100;          // Länge der Ziellinien (Kerzen)
 input int    InpLevelWidth       = 2;            // Linienbreite der Ziellinien
 
-input group "Trendlinien"
+input group "9 | Trendlinien"
 input int    InpTrendWidth       = 1;            // Linienbreite
 input bool   InpTrendRay         = false;        // Strahl nach rechts
 
@@ -85,11 +119,21 @@ input bool   InpTrendRay         = false;        // Strahl nach rechts
 #define TREND_W    30
 #define TREND_H    14
 
-//--- Farben (Vorlage aus der Skizze; Dreizack blau/lila wie im Original) ---
-color CLR_ALARM[6]  = { C'112,173,71', C'91,155,213', C'237,125,49', C'255,192,0', C'255,0,0', C'112,48,160' };
-color CLR_NORMAL[4] = { C'91,155,213', C'146,208,80', C'244,177,131', C'190,90,240' };
-color CLR_TRI[4]    = { C'0,191,255', C'112,173,71', C'255,192,110', C'147,112,219' };
-color CLR_TREND[4]  = { C'91,155,213', C'112,173,71', C'237,125,49', C'190,90,240' };
+//--- Farben der Tasten und Objekte (werden in Colors_Init aus den Eingaben gefüllt)
+color CLR_ALARM[6];
+color CLR_NORMAL[4];
+color CLR_TRI[4];
+color CLR_TREND[4];
+
+void Colors_Init()
+  {
+   CLR_ALARM[0] = InpClrAlarm1;  CLR_ALARM[1] = InpClrAlarm2;  CLR_ALARM[2] = InpClrAlarm3;
+   CLR_ALARM[3] = InpClrAlarm4;  CLR_ALARM[4] = InpClrAlarm5;  CLR_ALARM[5] = InpClrAlarm6;
+   CLR_NORMAL[0] = InpClrNormal1; CLR_NORMAL[1] = InpClrNormal2;
+   CLR_NORMAL[2] = InpClrNormal3; CLR_NORMAL[3] = InpClrNormal4;
+   CLR_TRI[0] = InpClrTri1;      CLR_TRI[1] = InpClrTri2;      CLR_TRI[2] = InpClrTri3;   CLR_TRI[3] = InpClrTri4;
+   CLR_TREND[0] = InpClrTrend1;  CLR_TREND[1] = InpClrTrend2;  CLR_TREND[2] = InpClrTrend3; CLR_TREND[3] = InpClrTrend4;
+  }
 
 //--- Zeichenmodus (Rechtecke und Trendlinien: Taste, dann 2 Klicks) --
 enum ENUM_TP_MODE { TP_NONE = 0, TP_RECT_ALARM, TP_RECT_NORMAL, TP_TREND };
@@ -104,6 +148,7 @@ long         g_mouse_prev  = 0;
 double       g_last_bid    = 0.0;
 string       g_last_cd     = "";
 ulong        g_seq         = 0;
+int          g_ox          = -100000;   // aktuelle linke Kante des Panels (für Panel_Follow)
 
 //+------------------------------------------------------------------+
 //| Hilfsfunktionen                                                  |
@@ -238,8 +283,16 @@ void Panel_Rect(int &ox, int &oy, int &w, int &h)
   {
    w  = g_min ? MIN_W : PANEL_W;
    h  = g_min ? MIN_H : PANEL_H;
-   ox = InpPanelX + (g_min ? PANEL_W - MIN_W : 0);   // minimiert: Taste bleibt an derselben Stelle
    oy = InpPanelY;
+   if(InpPanelPos == TP_POS_RIGHT)
+     {
+      // oben rechts: Abstand zum rechten Rand bleibt bei jeder Fensterbreite gleich
+      ox = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS) - w - InpPanelX;
+      if(ox < 0)
+         ox = 0;
+     }
+   else
+      ox = InpPanelX + (g_min ? PANEL_W - MIN_W : 0);   // minimiert: Taste bleibt an derselben Stelle
   }
 
 bool InPanel(const int x, const int y)
@@ -348,6 +401,7 @@ void Panel_Build()
 
    int ox, oy, w, h;
    Panel_Rect(ox, oy, w, h);
+   g_ox = ox;
 
    UiRect(NM_BG, ox, oy, w, h, C'225,225,225', C'150,150,150');
    UiLabel(NM_TITLE, ox + PAD, oy + 4, "Trident Panel", C'40,40,40', 8, "Arial", ANCHOR_LEFT_UPPER);
@@ -386,6 +440,26 @@ void Panel_Build()
    Countdown_Refresh(true);
    Buttons_Refresh();
    Title_Update();
+  }
+
+// Panel an die aktuelle Fensterbreite anpassen (oben rechts): alle Panel-Objekte um dieselbe Strecke verschieben
+void Panel_Follow()
+  {
+   if(g_ox == -100000)
+      return;   // Panel noch nicht aufgebaut
+   int ox, oy, w, h;
+   Panel_Rect(ox, oy, w, h);
+   if(ox == g_ox)
+      return;
+   const int dx = ox - g_ox;
+   g_ox = ox;
+   for(int i = ObjectsTotal(0, 0) - 1; i >= 0; i--)
+     {
+      const string nm = ObjectName(0, i, 0);
+      if(StringFind(nm, PFX_UI) == 0)
+         ObjectSetInteger(0, nm, OBJPROP_XDISTANCE, ObjectGetInteger(0, nm, OBJPROP_XDISTANCE) + dx);
+     }
+   ChartRedraw();
   }
 
 //+------------------------------------------------------------------+
@@ -428,7 +502,7 @@ void CreateRect(const string name, const datetime t, const double p, const color
    ObjectSetString(0, name, OBJPROP_TOOLTIP, alarm ? TT_ALARM_ON : "Rechteck");
   }
 
-// Rechteck anlegen bzw. verschieben (Hilfsobjekt, nicht auswählbar)
+// Grüne Zone des Dreizacks anlegen bzw. verschieben (auswählbar: rechten Rand ziehen)
 void PutRect(const string name, const datetime t1, const double p1, const datetime t2, const double p2,
              const color clr, const ENUM_LINE_STYLE style)
   {
@@ -439,15 +513,17 @@ void PutRect(const string name, const datetime t1, const double p1, const dateti
       ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
       ObjectSetInteger(0, name, OBJPROP_FILL, false);
       ObjectSetInteger(0, name, OBJPROP_BACK, false);
-      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
-      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
      }
    else
      {
       ObjectMove(0, name, 0, t1, p1);
       ObjectMove(0, name, 1, t2, p2);
      }
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, 0);   // A-B und B-C haben beim Anklicken Vorrang
+   ObjectSetString(0, name, OBJPROP_TOOLTIP, "Grüne Zone: rechten Rand ziehen, um sie zu verlängern");
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, name, OBJPROP_STYLE, style);
   }
@@ -504,30 +580,41 @@ void PutText(const string name, const datetime t, const double p, const string t
 //|  mittlere Zinke  C       -> C+2L                                 |
 //|  rechte Zinke    B+L+2R  -> B+2L+2R                              |
 //|  Diagonale       B+L     -> B+L+2R                               |
-//|  gestricheltes Rechteck: A bis A+50 Kerzen, Preis von A bis C    |
+//|  grüne Zone: links an A, Höhe A bis C, Breite per Maus ziehbar   |
 //|  Info-Text am Extrempunkt: Kerzen/Punkte des Impulses            |
 //|                                                                  |
 //|  Masterobjekte (auswählbar): <base>_AB und <base>_BC.            |
 //|  Alles andere wird bei jedem Verschieben daraus neu berechnet.   |
 //|  Gespeichert wird nur die Lage von C relativ zum Impuls          |
-//|  (rt = Zeitversatz / Impulsbreite, rp = Preisversatz / Höhe).    |
+//|  (rt = Zeitversatz / Impulsbreite, rp = Preisversatz / Höhe)     |
+//|  und die Breite der grünen Zone in Kerzen (bw).                  |
 //+------------------------------------------------------------------+
-void Trident_LoadState(const string base, double &rt, double &rp)
+void Trident_LoadState(const string base, double &rt, double &rp, double &bw)
   {
    rt = 3.0;
    rp = -0.5;
+   bw = MathMax(1, InpBoxBars);
    const string nm = base + "_S";
    if(ObjectFind(0, nm) < 0)
       return;
-   const string s = ObjectGetString(0, nm, OBJPROP_TEXT);
-   const int    k = StringFind(s, ";");
-   if(k <= 0)
+   const string s  = ObjectGetString(0, nm, OBJPROP_TEXT);
+   const int    k1 = StringFind(s, ";");
+   if(k1 <= 0)
       return;
-   rt = StringToDouble(StringSubstr(s, 0, k));
-   rp = StringToDouble(StringSubstr(s, k + 1));
+   const int    k2 = StringFind(s, ";", k1 + 1);
+   rt = StringToDouble(StringSubstr(s, 0, k1));
+   if(k2 < 0)
+      rp = StringToDouble(StringSubstr(s, k1 + 1));
+   else
+     {
+      rp = StringToDouble(StringSubstr(s, k1 + 1, k2 - k1 - 1));
+      bw = StringToDouble(StringSubstr(s, k2 + 1));
+     }
+   if(bw < 1.0)
+      bw = 1.0;
   }
 
-void Trident_SaveState(const string base, const double rt, const double rp)
+void Trident_SaveState(const string base, const double rt, const double rp, const double bw)
   {
    const string nm = base + "_S";
    if(ObjectFind(0, nm) < 0)
@@ -538,7 +625,8 @@ void Trident_SaveState(const string base, const double rt, const double rp)
       ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
      }
-   ObjectSetString(0, nm, OBJPROP_TEXT, DoubleToString(rt, 6) + ";" + DoubleToString(rp, 6));
+   ObjectSetString(0, nm, OBJPROP_TEXT,
+                   DoubleToString(rt, 6) + ";" + DoubleToString(rp, 6) + ";" + DoubleToString(bw, 3));
   }
 
 // Waagrechte Ziellinie (optional) mit Nummer am rechten Ende
@@ -552,12 +640,14 @@ void Trident_Level(const string base, const int k, const double x, const double 
    ObjectSetString(0, base + "_L" + sk, OBJPROP_TOOLTIP, "Ziel " + sk + ": " + DoubleToString(p, _Digits));
   }
 
-// cFromObject = true: Lage von C aus dem Objekt <base>_BC lesen (C wurde gezogen / Neuaufbau)
-// cFromObject = false: Lage von C aus dem gespeicherten Verhältnis (A oder B wurden gezogen)
-void Trident_Rebuild(const string base, const bool cFromObject)
+// cFromObject   = true : Lage von C aus dem Objekt <base>_BC lesen (C wurde gezogen / Neuaufbau)
+//               = false: Lage von C aus dem gespeicherten Verhältnis (A oder B wurden gezogen)
+// boxFromObject = true : Breite der grünen Zone aus dem Objekt <base>_BX lesen (Zone wurde gezogen)
+void Trident_Rebuild(const string base, const bool cFromObject, const bool boxFromObject)
   {
    const string ab = base + "_AB";
    const string bc = base + "_BC";
+   const string bx = base + "_BX";
    if(ObjectFind(0, ab) < 0)
       return;
 
@@ -581,8 +671,8 @@ void Trident_Rebuild(const string base, const bool cFromObject)
       d = 1.0;
    const double H = pb - pa;     // Impulshöhe (mit Vorzeichen)
 
-   double rt, rp;
-   Trident_LoadState(base, rt, rp);
+   double rt, rp, bw;
+   Trident_LoadState(base, rt, rp, bw);
    if(cFromObject && ObjectFind(0, bc) >= 0)
      {
       const double xc0 = BarPos((datetime)ObjectGetInteger(0, bc, OBJPROP_TIME, 1));
@@ -591,15 +681,26 @@ void Trident_Rebuild(const string base, const bool cFromObject)
       if(MathAbs(H) >= _Point)
          rp = (pc0 - pb) / H;
      }
-   Trident_SaveState(base, rt, rp);
+   if(boxFromObject && ObjectFind(0, bx) >= 0)
+     {
+      // rechter Rand der Zone (egal ob der Rand gezogen oder das ganze Rechteck verschoben wurde)
+      const double x1 = BarPos((datetime)ObjectGetInteger(0, bx, OBJPROP_TIME, 0));
+      const double x2 = BarPos((datetime)ObjectGetInteger(0, bx, OBJPROP_TIME, 1));
+      bw = MathMax(x1, x2) - xa;
+      if(bw < 1.0)
+         bw = 1.0;
+     }
+   Trident_SaveState(base, rt, rp, bw);
 
    const double e  = rt * d;     // C relativ zu B: Zeit (Kerzen)
    const double r  = rp * H;     // C relativ zu B: Preis
    const double xc = xb + e;
    const double pc = pb + r;
 
-   // Rücksetzer B-C (Masterobjekt)
+   // Rücksetzer B-C (Masterobjekt); A-B und B-C haben beim Anklicken Vorrang vor der Zone
    PutTrend(bc, PosToTime(xb), pb, PosToTime(xc), pc, clr, InpTridentWidth, false, true, false);
+   ObjectSetInteger(0, ab, OBJPROP_ZORDER, 5);
+   ObjectSetInteger(0, bc, OBJPROP_ZORDER, 5);
 
    // Zinken und Diagonale
    PutTrend(base + "_PA", PosToTime(xb + d), pb + H, PosToTime(xb + 2 * d), pb + 2 * H,
@@ -612,11 +713,11 @@ void Trident_Rebuild(const string base, const bool cFromObject)
    PutTrend(base + "_DG", PosToTime(xb + d), pb + H, PosToTime(xb + d + 2 * e), pb + H + 2 * r,
             clr, InpTridentWidth, false, false, true);                               // Diagonale
 
-   // Gestricheltes Rechteck: von A bis zur Höhe von C
+   // Grüne Zone: links an A, Höhe A bis C, Breite bw (per Maus ziehbar)
    if(InpShowBox)
-      PutRect(base + "_BX", PosToTime(xa), pa, PosToTime(xa + InpBoxBars), pc, InpBoxColor, STYLE_DASH);
+      PutRect(bx, PosToTime(xa), pa, PosToTime(xa + bw), pc, InpBoxColor, STYLE_DASH);
    else
-      ObjectDelete(0, base + "_BX");
+      ObjectDelete(0, bx);
 
    // Info-Text "Kerzen/Punkte" am Extrempunkt
    if(InpShowInfo)
@@ -663,7 +764,7 @@ void Trident_RefreshAll()
         }
      }
    for(int i = 0; i < n; i++)
-      Trident_Rebuild(list[i], true);   // C bleibt, wo es ist; nur Kerzenzahl/Längen werden aktualisiert
+      Trident_Rebuild(list[i], true, true);   // C und Zone bleiben, wo sie sind; nur Kerzenzahl/Längen werden aktualisiert
   }
 
 // Dreizack sofort im sichtbaren Chartbereich erzeugen; Punkte A, B, C sind ausgewählt
@@ -689,8 +790,8 @@ void Trident_Create(const int idx)
    const string base = NewBase(PFX_TRI, "_AB");
    PutTrend(base + "_AB", PosToTime(xA), pa, PosToTime(xA + MathMax(1, InpTridentBars)), pb,
             CLR_TRI[idx], InpTridentWidth, false, true, false);
-   Trident_SaveState(base, 3.0, -0.5);
-   Trident_Rebuild(base, false);
+   Trident_SaveState(base, 3.0, -0.5, MathMax(1, InpBoxBars));
+   Trident_Rebuild(base, false, false);
    ObjectSetInteger(0, base + "_AB", OBJPROP_SELECTED, true);   // Anfasser sofort sichtbar
    ObjectSetInteger(0, base + "_BC", OBJPROP_SELECTED, true);
    ChartRedraw();
@@ -903,6 +1004,7 @@ void CheckAlarms()
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   Colors_Init();
    g_min = LoadMinState();
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
    Panel_Build();
@@ -924,6 +1026,7 @@ void OnDeinit(const int reason)
 
 void OnTimer()
   {
+   Panel_Follow();     // falls ein Größen-Ereignis ausgeblieben ist
    Countdown_Refresh(false);
    CheckAlarms();
   }
@@ -952,6 +1055,8 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(lparam == 27 && g_mode != TP_NONE)   // ESC
          Cancel();
      }
+   else if(id == CHARTEVENT_CHART_CHANGE)
+      Panel_Follow();   // Fenster wurde breiter/schmaler: Panel bleibt oben rechts
    else if(id == CHARTEVENT_OBJECT_DRAG || id == CHARTEVENT_OBJECT_CHANGE)
      {
       int L = StringLen(sparam);
@@ -961,12 +1066,17 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          string base = StringSubstr(sparam, 0, L - 3);
          if(suf == "_AB")
            {
-            Trident_Rebuild(base, false);   // A oder B (oder die ganze Linie) bewegt: C folgt dem Verhältnis
+            Trident_Rebuild(base, false, false);   // A oder B (oder die ganze Linie) bewegt: C folgt dem Verhältnis
             ChartRedraw();
            }
          else if(suf == "_BC")
            {
-            Trident_Rebuild(base, true);    // C bewegt: neue Lage von C übernehmen
+            Trident_Rebuild(base, true, false);    // C bewegt: neue Lage von C übernehmen
+            ChartRedraw();
+           }
+         else if(suf == "_BX")
+           {
+            Trident_Rebuild(base, false, true);    // grüne Zone gezogen: neue Breite übernehmen
             ChartRedraw();
            }
         }
