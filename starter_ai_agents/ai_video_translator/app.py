@@ -6,15 +6,24 @@ import json
 import os
 import queue
 import re
+import sys
 import threading
 import tkinter as tk
+import traceback
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from core import DEFAULT_CLAUDE_MODEL, LANGUAGES, VIDEO_EXTENSIONS, Cancelled, PipelineError, language_label
+from core import (
+    DEFAULT_CLAUDE_MODEL, LANGUAGES, VIDEO_EXTENSIONS, Cancelled, PipelineError, is_frozen, language_label,
+)
 from pipeline import Options, process_video
 
 SETTINGS_FILE = Path.home() / ".video_translator.json"
+LOG_FILE = Path.home() / ".video_translator.log"
+# The offline engines are not part of the .exe; the shorter labels keep the window from growing.
+ARGOS_LABEL = "Offline (kostenlos, Argos Translate - einfachere Qualität)"
+PIPER_LABEL = "Offline-Stimme (Piper, einfacher)"
+PYTHON_ONLY = " (nur im Python-Setup)"
 AUTO = "Automatisch erkennen"
 WHISPER_HINTS = {
     "tiny": "tiny (sehr schnell, ungenau)",
@@ -138,8 +147,10 @@ class App(tk.Tk):
         ttk.Label(box, text="Modell:").grid(row=2, column=0, sticky="w", padx=(20, 6))
         self.model_entry = ttk.Entry(box, textvariable=self.claude_model)
         self.model_entry.grid(row=2, column=1, sticky="ew")
-        ttk.Radiobutton(box, text="Offline (kostenlos, Argos Translate - einfachere Qualität)", value="argos",
-                        variable=self.backend, command=self._refresh_states).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.argos_radio = ttk.Radiobutton(
+            box, text="Offline-Übersetzung" + PYTHON_ONLY if is_frozen() else ARGOS_LABEL,
+            value="argos", variable=self.backend, command=self._refresh_states)
+        self.argos_radio.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # 4. speech recognition
         box = ttk.LabelFrame(left, text="4. Spracherkennung (läuft lokal)", padding=8)
@@ -172,11 +183,13 @@ class App(tk.Tk):
                         variable=self.dub, command=self._refresh_states).grid(row=0, column=0, columnspan=2, sticky="w")
         self.dub_widgets: list[ttk.Widget] = []
         engines = [("Microsoft-Stimmen (sehr natürlich, braucht Internet)", "edge"),
-                   ("Offline-Stimme (Piper, einfacher)", "piper")]
+                   ("Offline-Stimme" + PYTHON_ONLY if is_frozen() else PIPER_LABEL, "piper")]
         for row, (text, value) in enumerate(engines, start=1):
             radio = ttk.Radiobutton(box, text=text, value=value, variable=self.tts_engine, command=self._refresh_states)
             radio.grid(row=row, column=0, columnspan=2, sticky="w", padx=(20, 0))
             self.dub_widgets.append(radio)
+            if value == "piper":
+                self.piper_radio = radio
         ttk.Label(box, text="Sprecher:").grid(row=3, column=0, sticky="w", padx=(20, 6), pady=(4, 0))
         self.voice_box = ttk.Combobox(box, textvariable=self.voice, values=list(GENDER_LABELS.values()), state="readonly")
         self.voice_box.grid(row=3, column=1, sticky="ew", pady=(4, 0))
@@ -209,12 +222,20 @@ class App(tk.Tk):
     # ------------------------------------------------------------ actions
 
     def _refresh_states(self) -> None:
+        if is_frozen():  # the packaged .exe cannot install the heavy offline engines
+            if self.backend.get() == "argos":
+                self.backend.set("claude")
+            if self.tts_engine.get() == "piper":
+                self.tts_engine.set("edge")
+            self.argos_radio.configure(state="disabled")
         claude = "normal" if self.backend.get() == "claude" else "disabled"
         self.key_entry.configure(state=claude)
         self.model_entry.configure(state=claude)
         dub = self.dub.get()
         for widget in self.dub_widgets:
             widget.configure(state="normal" if dub else "disabled")
+        if is_frozen():
+            self.piper_radio.configure(state="disabled")
         self.voice_box.configure(state="readonly" if dub and self.tts_engine.get() == "edge" else "disabled")
         self.original_box.configure(state="readonly" if dub else "disabled")
 
@@ -341,9 +362,49 @@ class App(tk.Tk):
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def report_callback_exception(self, exc, val, tb) -> None:
+        """Tk swallows errors from button handlers; without a console nobody would ever see them."""
+        detail = "".join(traceback.format_exception(exc, val, tb))
+        self._append_log("FEHLER im Programm:\n" + detail)
+        print(detail, file=sys.stderr)
+
+
+def _prepare_streams() -> None:
+    """The windowed .exe has no console, so sys.stdout/sys.stderr are None and libraries that print
+    (the download progress bar of the Whisper model, for one) would crash. Point them at a log file."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        sink = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        sink = open(os.devnull, "w")
+    sys.stdout = sys.stdout or sink
+    sys.stderr = sys.stderr or sink
+
+
+def _show_fatal(detail: str) -> None:
+    print(detail, file=sys.stderr)
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Video-Übersetzer", f"Das Programm konnte nicht starten:\n\n{detail[-1500:]}\n\n"
+                                                 f"Das Protokoll liegt unter {LOG_FILE}")
+    except Exception:
+        pass
+
 
 def main() -> None:
-    App().mainloop()
+    _prepare_streams()
+    if "--selftest" in sys.argv:  # used by the build to prove the packaged program works
+        import selftest
+
+        i = sys.argv.index("--selftest")
+        sys.exit(selftest.run(Path(sys.argv[i + 1]) if len(sys.argv) > i + 1 else None))
+    try:
+        App().mainloop()
+    except Exception:
+        _show_fatal(traceback.format_exc())
+        sys.exit(1)
 
 
 if __name__ == "__main__":

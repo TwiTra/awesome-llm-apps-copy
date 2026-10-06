@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import threading
@@ -69,6 +70,18 @@ class Cue:
 
 def noop(*_args, **_kwargs) -> None:
     pass
+
+
+def is_frozen() -> bool:
+    """True inside the packaged .exe (PyInstaller), where nothing can be pip-installed."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def install_hint(package: str) -> str:
+    if is_frozen():
+        return ("Diese Funktion ist in der .exe nicht enthalten. Sie steht nur im Python-Setup "
+                "(start.bat) zur Verfügung, siehe README.")
+    return f"Installiere es mit:\n    pip install {package}"
 
 
 def check_cancel(cancel: Optional[threading.Event]) -> None:
@@ -393,8 +406,7 @@ class ArgosTranslator:
             import argostranslate.translate as translate
         except ImportError as e:
             raise PipelineError(
-                "Für die Offline-Übersetzung fehlt 'argostranslate'. Installiere es mit:\n"
-                "    pip install argostranslate"
+                f"Für die Offline-Übersetzung fehlt 'argostranslate'. {install_hint('argostranslate')}"
             ) from e
         return package, translate
 

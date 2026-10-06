@@ -17,7 +17,8 @@ from typing import Optional, Protocol
 import numpy as np  # installed together with faster-whisper
 
 from core import (
-    LANGUAGES, Cue, LogFn, PipelineError, ProgressFn, check_cancel, noop, run_ffmpeg, subprocess_flags,
+    LANGUAGES, Cue, LogFn, PipelineError, ProgressFn, check_cancel, install_hint, noop, run_ffmpeg,
+    subprocess_flags,
 )
 
 DUB_RATE = 24000  # sample rate of the generated dubbing track (mono, 16 bit)
@@ -95,7 +96,7 @@ class EdgeTts:
         try:
             import edge_tts
         except ImportError as e:
-            raise PipelineError("Für die Microsoft-Stimmen fehlt 'edge-tts'. Installiere es mit:\n    pip install edge-tts") from e
+            raise PipelineError(f"Für die Microsoft-Stimmen fehlt 'edge-tts'. {install_hint('edge-tts')}") from e
         try:
             voices = asyncio.run(edge_tts.list_voices())
         except Exception as e:
@@ -152,7 +153,7 @@ class PiperTts:
             from piper import PiperVoice
             from piper.download_voices import download_voice
         except ImportError as e:
-            raise PipelineError("Für die Offline-Stimme fehlt 'piper-tts'. Installiere es mit:\n    pip install piper-tts") from e
+            raise PipelineError(f"Für die Offline-Stimme fehlt 'piper-tts'. {install_hint('piper-tts')}") from e
         name = PIPER_VOICES.get(self.lang)
         if name is None:
             raise PipelineError(f"Für '{self.lang}' gibt es keine Offline-Stimme. Nutze die Microsoft-Stimmen.")

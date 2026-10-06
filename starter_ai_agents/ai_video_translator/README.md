@@ -36,6 +36,26 @@ Beim ersten Start werden die Pakete installiert (ein paar Minuten). Beim ersten 
 
 ffmpeg musst du nicht extra installieren: Ein mitgeliefertes ffmpeg wird automatisch verwendet. Ein bereits installiertes ffmpeg wird bevorzugt.
 
+### Als .exe (ohne Python)
+
+Wer kein Python installieren will, nimmt die fertige Windows-Version. GitHub baut sie auf einem Windows-Rechner und prüft sie mit einem eingebauten Selbsttest (`.github/workflows/video-translator-exe.yml`):
+
+1. Im Repository auf **Actions** gehen, links **video-translator-exe** wählen, **Run workflow** klicken.
+2. Nach etwa 15 bis 30 Minuten steht auf der Seite des Laufs unter **Artifacts** (GitHub-Login nötig, 90 Tage lang abrufbar):
+   - `VideoUebersetzer-exe`: **eine einzelne Datei**. Sie entpackt sich bei jedem Start selbst und braucht deshalb einen Moment.
+   - `VideoUebersetzer-Ordner`: ZIP mit einem Ordner. Entpacken und `VideoUebersetzer.exe` starten, geht schneller.
+3. Wer einen normalen Download-Link will, legt ein Tag an (`git tag video-translator-v1.0 && git push origin video-translator-v1.0`). Dann stellt der Lauf beide Dateien als **Release** ein.
+
+Oder selbst bauen, auf einem Windows-PC mit Python: `pip install -r requirements.txt pyinstaller`, dann `python build_exe.py --onefile`. Das Ergebnis liegt in `dist/`.
+
+Gut zu wissen:
+- Die Datei ist groß (einige hundert MB), weil Whisper, ffmpeg und die Python-Pakete drinstecken. Das Sprachmodell lädt Whisper beim ersten Übersetzen herunter.
+- Die Datei ist nicht signiert. Windows zeigt deshalb evtl. „Der Computer wurde durch Windows geschützt“: **Weitere Informationen → Trotzdem ausführen**. Auch Virenscanner schlagen bei solchen Programmen manchmal fälschlich an.
+- **Nicht** enthalten sind die Offline-Übersetzung (Argos) und die Offline-Stimme (Piper), sie sind im Fenster ausgegraut. Dafür braucht es das Python-Setup (`start.bat`).
+- Eine Grafikkarte wird nur genutzt, wenn die CUDA-Bibliotheken von NVIDIA installiert sind, sonst rechnet das Programm auf dem Prozessor.
+- Einstellungen und Protokoll liegen im Benutzerordner (`.video_translator.json`, `.video_translator.log`). Bei Problemen hilft das Protokoll.
+- `VideoUebersetzer.exe --selftest ergebnis.txt` prüft, ob alle Teile des Programms laufen, und schreibt das Ergebnis in die Datei.
+
 ### Oberfläche
 
 1. Videos hinzufügen (mehrere auf einmal sind möglich).
@@ -92,6 +112,8 @@ So wird der Ton zusammengebaut: Jede Zeile wird einzeln gesprochen und zur Start
 | `pipeline.py` | der ganze Ablauf für ein Video |
 | `core.py` | Bausteine: ffmpeg, Whisper, Übersetzer, Untertitel (SRT) |
 | `dubbing.py` | Sprachausgabe: Stimmen, Zeitplan, Tonspur zusammenbauen |
+| `selftest.py` | Selbsttest (`python app.py --selftest`), prüft auch die gebaute `.exe` |
+| `build_exe.py` | baut die `.exe` mit PyInstaller |
 | `test_core.py`, `test_dubbing.py` | Tests: `python -m unittest` (ohne Internet, ohne API-Schlüssel) |
 
 ## Wie die Claude-Übersetzung arbeitet
