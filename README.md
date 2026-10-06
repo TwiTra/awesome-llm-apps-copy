@@ -125,7 +125,7 @@ streamlit run travel_agent.py
 *   [🩻 AI Medical Imaging Agent](starter_ai_agents/ai_medical_imaging_agent/) - Diagnostic analysis of X-rays and scans with Gemini
 *   [😂 AI Meme Generator Agent (Browser)](starter_ai_agents/ai_meme_generator_agent_browseruse/) - Makes memes by driving a real browser, not an image API
 *   [🎵 AI Music Generator Agent](starter_ai_agents/ai_music_generator_agent/) - Prompt in, MP3 track out
-*   [🎬 AI Video Translator (Desktop)](starter_ai_agents/ai_video_translator/) - Desktop app that transcribes videos locally with Whisper and translates the subtitles with Claude or offline
+*   [🎬 AI Video Translator (Desktop)](starter_ai_agents/ai_video_translator/) - Desktop app that transcribes videos locally with Whisper, translates the subtitles with Claude or offline, and can dub the result with a synthetic voice
 *   [🛫 AI Travel Agent (Local & Cloud)](starter_ai_agents/ai_travel_agent/) - Personalized day-by-day travel itineraries
 *   [💸 AI x402 Paying Agent](starter_ai_agents/ai_x402_paying_agent/) - An agent with a wallet that pays per-call for the data it needs — no API keys
 *   [✨ Gemini Multimodal Agent](starter_ai_agents/multimodal_ai_agent/) - Video analysis plus web search in one agent

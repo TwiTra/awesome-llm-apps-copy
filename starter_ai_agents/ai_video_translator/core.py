@@ -1,7 +1,7 @@
-"""Video translation pipeline: video -> audio -> Whisper -> translation -> SRT / video.
+"""Building blocks: ffmpeg helpers, Whisper transcription, translators and subtitle (SRT) output.
 
-Everything here is UI-agnostic. The GUI (app.py) and the CLI (cli.py) both call
-`process_video`, and report progress through the `log` / `progress` callbacks.
+UI-agnostic. pipeline.py strings these together; progress is reported through
+`log` / `progress` callbacks and long jobs honour a `threading.Event` for cancelling.
 """
 
 from __future__ import annotations
@@ -67,33 +67,18 @@ class Cue:
     original: str = ""
 
 
-@dataclass
-class Options:
-    target_lang: str = "de"
-    source_lang: Optional[str] = None  # None = detect automatically
-    backend: str = "claude"  # "claude" | "argos"
-    api_key: str = ""
-    claude_model: str = DEFAULT_CLAUDE_MODEL
-    whisper_model: str = "small"
-    device: str = "auto"  # "auto" | "cpu" | "cuda"
-    bilingual: bool = False
-    soft_video: bool = True  # copy of the video with a switchable subtitle track
-    burn_video: bool = False  # copy of the video with the subtitles drawn into the picture
-    output_dir: Optional[Path] = None  # None = next to the video
-
-
-def _noop(*_args, **_kwargs) -> None:
+def noop(*_args, **_kwargs) -> None:
     pass
 
 
-def _check_cancel(cancel: Optional[threading.Event]) -> None:
+def check_cancel(cancel: Optional[threading.Event]) -> None:
     if cancel is not None and cancel.is_set():
         raise Cancelled()
 
 
 # ---------------------------------------------------------------- ffmpeg
 
-def _subprocess_flags() -> int:
+def subprocess_flags() -> int:
     # Keep Windows from flashing a console window for every ffmpeg call.
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
@@ -102,7 +87,7 @@ def _ffmpeg_has_filter(exe: str, name: str) -> bool:
     try:
         out = subprocess.run(
             [exe, "-hide_banner", "-filters"], capture_output=True, text=True,
-            errors="replace", creationflags=_subprocess_flags(), timeout=30,
+            errors="replace", creationflags=subprocess_flags(), timeout=30,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return False
@@ -140,7 +125,7 @@ def find_ffmpeg(need_subtitles_filter: bool = False) -> str:
 def probe_duration(ffmpeg: str, path: Path) -> Optional[float]:
     proc = subprocess.run(
         [ffmpeg, "-hide_banner", "-i", str(path)], capture_output=True, text=True,
-        errors="replace", creationflags=_subprocess_flags(),
+        errors="replace", creationflags=subprocess_flags(),
     )
     m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", proc.stderr)
     if not m:
@@ -155,7 +140,7 @@ def run_ffmpeg(
     ffmpeg: str,
     args: list[str],
     duration: Optional[float] = None,
-    progress: ProgressFn = _noop,
+    progress: ProgressFn = noop,
     cancel: Optional[threading.Event] = None,
     cwd: Optional[Path] = None,
 ) -> None:
@@ -164,7 +149,7 @@ def run_ffmpeg(
     tail: deque[str] = deque(maxlen=15)
     with subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
-        cwd=str(cwd) if cwd else None, creationflags=_subprocess_flags(),
+        cwd=str(cwd) if cwd else None, creationflags=subprocess_flags(),
     ) as proc:
         try:
             assert proc.stdout is not None
@@ -223,8 +208,8 @@ def transcribe(
     model_size: str,
     language: Optional[str],
     device: str,
-    log: LogFn = _noop,
-    progress: ProgressFn = _noop,
+    log: LogFn = noop,
+    progress: ProgressFn = noop,
     cancel: Optional[threading.Event] = None,
 ) -> tuple[list[Cue], str]:
     """Run Whisper locally. Returns the cues and the (detected) source language."""
@@ -235,7 +220,7 @@ def transcribe(
 
     log(f"Lade Whisper-Modell '{model_size}' (beim ersten Mal wird es heruntergeladen) ...")
     model = WhisperModel(model_size, device=device, compute_type="auto")
-    _check_cancel(cancel)
+    check_cancel(cancel)
 
     segments, info = model.transcribe(_load_wav(wav), language=language, vad_filter=True, beam_size=5)
     detected = info.language
@@ -244,7 +229,7 @@ def transcribe(
             f"Sicherheit {info.language_probability:.0%})")
     cues: list[Cue] = []
     for seg in segments:  # lazy generator: this is where the actual work happens
-        _check_cancel(cancel)
+        check_cancel(cancel)
         text = seg.text.strip()
         if text:
             cues.append(Cue(seg.start, seg.end, text))
@@ -303,7 +288,7 @@ def _auth_error(error: Exception) -> Exception:
 class ClaudeTranslator:
     """Translates subtitle lines with Claude, in batches, with structured JSON output."""
 
-    def __init__(self, target: str, model: str, api_key: str = "", log: LogFn = _noop, client=None):
+    def __init__(self, target: str, model: str, api_key: str = "", log: LogFn = noop, client=None):
         self.target = target
         self.model = model
         self.log = log
@@ -333,11 +318,11 @@ class ClaudeTranslator:
         except anthropic.PermissionDeniedError as e:
             raise PipelineError("Dein API-Schlüssel hat keinen Zugriff auf dieses Modell.") from e
 
-    def translate(self, texts: list[str], src: Optional[str], progress: ProgressFn = _noop,
+    def translate(self, texts: list[str], src: Optional[str], progress: ProgressFn = noop,
                   cancel: Optional[threading.Event] = None) -> list[str]:
         out: list[str] = []
         for i in range(0, len(texts), BATCH_SIZE):
-            _check_cancel(cancel)
+            check_cancel(cancel)
             out.extend(self._translate_resilient(texts[i:i + BATCH_SIZE]))
             progress(min((i + BATCH_SIZE) / len(texts), 1.0))
         return out
@@ -360,7 +345,7 @@ class ClaudeTranslator:
         kwargs: dict = dict(
             model=self.model,
             max_tokens=16000,
-            system=TRANSLATION_SYSTEM_PROMPT.format(target=_language_label(self.target)),
+            system=TRANSLATION_SYSTEM_PROMPT.format(target=language_label(self.target)),
             messages=[{"role": "user", "content": payload}],
         )
         output_config: dict = {"format": {"type": "json_schema", "schema": TRANSLATION_SCHEMA}}
@@ -397,7 +382,7 @@ class ClaudeTranslator:
 class ArgosTranslator:
     """Free, fully offline translation with Argos Translate (optional install)."""
 
-    def __init__(self, target: str, log: LogFn = _noop):
+    def __init__(self, target: str, log: LogFn = noop):
         self.target = target
         self.log = log
         self._ready_for: Optional[str] = None
@@ -445,7 +430,7 @@ class ArgosTranslator:
                     package.install_from_path(pkg.download())
         self._ready_for = src
 
-    def translate(self, texts: list[str], src: Optional[str], progress: ProgressFn = _noop,
+    def translate(self, texts: list[str], src: Optional[str], progress: ProgressFn = noop,
                   cancel: Optional[threading.Event] = None) -> list[str]:
         if not src:
             raise PipelineError("Die Quellsprache konnte nicht bestimmt werden.")
@@ -453,19 +438,13 @@ class ArgosTranslator:
         self._ensure_pair(src)
         out = []
         for i, text in enumerate(texts):
-            _check_cancel(cancel)
+            check_cancel(cancel)
             out.append(translate.translate(text, src, self.target).strip() or text)
             progress((i + 1) / len(texts))
         return out
 
 
-def make_translator(opts: Options, log: LogFn = _noop):
-    if opts.backend == "argos":
-        return ArgosTranslator(opts.target_lang, log)
-    return ClaudeTranslator(opts.target_lang, opts.claude_model or DEFAULT_CLAUDE_MODEL, opts.api_key, log)
-
-
-def _language_label(code: str) -> str:
+def language_label(code: str) -> str:
     name = LANGUAGES.get(code, (code,))[0]
     return f"{name} ({code})"
 
@@ -585,75 +564,3 @@ def burn_subtitles(ffmpeg: str, video: Path, srt: Path, out: Path,
              "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)],
             duration, progress, cancel, cwd=Path(tmp),
         )
-
-
-# ---------------------------------------------------------------- orchestration
-
-def process_video(
-    video: Path,
-    opts: Options,
-    log: LogFn = _noop,
-    progress: ProgressFn = _noop,
-    cancel: Optional[threading.Event] = None,
-) -> list[Path]:
-    """Translate one video. Returns the files that were written."""
-    video = Path(video)
-    if not video.is_file():
-        raise PipelineError(f"Datei nicht gefunden: {video}")
-    out_dir = Path(opts.output_dir) if opts.output_dir else video.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    wants_video = opts.soft_video or opts.burn_video
-
-    ffmpeg = find_ffmpeg(need_subtitles_filter=opts.burn_video)
-    translator = make_translator(opts, log)
-    translator.preflight(opts.source_lang)  # cheap checks first, so errors do not come after an hour of work
-
-    # Progress budget: audio 3%, transcription 57%, translation 25%, video 15% (or 15% more for the rest).
-    def stage(lo: float, hi: float) -> ProgressFn:
-        return lambda f: progress(lo + (hi - lo) * max(0.0, min(f, 1.0)))
-
-    written: list[Path] = []
-    with tempfile.TemporaryDirectory() as tmp:
-        wav = Path(tmp) / "audio.wav"
-        log("Extrahiere Tonspur ...")
-        extract_audio(ffmpeg, video, wav, cancel)
-        progress(0.03)
-
-        log("Erkenne Sprache und schreibe Text mit (das dauert je nach Länge und Modell) ...")
-        cues, src = transcribe(wav, opts.whisper_model, opts.source_lang, opts.device, log, stage(0.03, 0.60), cancel)
-    if not cues:
-        raise PipelineError("In diesem Video wurde keine Sprache erkannt.")
-    log(f"{len(cues)} Textabschnitte erkannt.")
-
-    if src == opts.target_lang:
-        log("Das Video ist bereits in der Zielsprache - es wird nicht übersetzt.")
-        translated = [c.text for c in cues]
-    else:
-        log(f"Übersetze {_language_label(src)} -> {_language_label(opts.target_lang)} ...")
-        translated = translator.translate([c.text for c in cues], src, stage(0.60, 0.85 if wants_video else 0.97), cancel)
-    final = [Cue(c.start, c.end, t, original=c.text) for c, t in zip(cues, translated)]
-
-    srt_path = unique_path(out_dir / f"{video.stem}.{opts.target_lang}.srt")
-    srt_path.write_text(build_srt(final, opts.bilingual), encoding="utf-8")
-    written.append(srt_path)
-    log(f"Untertitel gespeichert: {srt_path}")
-    progress(0.85 if wants_video else 1.0)
-
-    duration = probe_duration(ffmpeg, video)
-    if opts.soft_video:
-        suffix = video.suffix if video.suffix.lower() in (".mp4", ".m4v", ".mov") else ".mkv"
-        out = unique_path(out_dir / f"{video.stem}.{opts.target_lang}{suffix}")
-        log("Erzeuge Video mit Untertitel-Spur ...")
-        span = (0.85, 0.92 if opts.burn_video else 1.0)
-        embed_soft_subtitles(ffmpeg, video, srt_path, out, opts.target_lang, duration, stage(*span), cancel)
-        written.append(out)
-        log(f"Video gespeichert: {out}")
-    if opts.burn_video:
-        out = unique_path(out_dir / f"{video.stem}.{opts.target_lang}.eingebrannt.mp4")
-        log("Brenne Untertitel ins Bild (neu kodieren, das kann dauern) ...")
-        burn_subtitles(ffmpeg, video, srt_path, out, duration, stage(0.92 if opts.soft_video else 0.85, 1.0), cancel)
-        written.append(out)
-        log(f"Video gespeichert: {out}")
-    progress(1.0)
-    return written
-

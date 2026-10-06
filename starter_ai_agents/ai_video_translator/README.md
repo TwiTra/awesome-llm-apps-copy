@@ -5,14 +5,17 @@ Ein Programm für den PC, das Videos **übersetzt**: Es erkennt die gesprochene 
 - eine **Untertitel-Datei** (`.srt`) in der Zielsprache,
 - auf Wunsch das **Video mit abschaltbarer Untertitel-Spur** (schnell, das Video wird nicht neu kodiert),
 - auf Wunsch das **Video mit eingebrannten Untertiteln** (laufen in jedem Player und auf jedem Handy),
-- auf Wunsch **zweisprachige** Untertitel (Übersetzung plus Original darunter).
+- auf Wunsch **zweisprachige** Untertitel (Übersetzung plus Original darunter),
+- auf Wunsch eine **Sprachausgabe**: Eine Computerstimme spricht die Übersetzung, und du bekommst ein Video mit dieser neuen Tonspur (Vertonung).
 
-> **Wichtig:** Das Programm erzeugt Untertitel, **keine neue Tonspur** (kein Synchronsprecher / Voice-over).
+> **Grenzen der Vertonung:** Es spricht immer *eine* Stimme für alle Sprecher im Video. Stimmen werden nicht nachgeahmt und die Lippenbewegung passt nicht dazu. Zu schnelle Zeilen werden leicht beschleunigt, damit sie in die Lücke passen.
 
 ## So funktioniert es
 
 ```
 Video ──ffmpeg──▶ Ton ──Whisper (lokal)──▶ Text + Zeiten ──Claude oder Argos──▶ Übersetzung ──▶ .srt / Video
+                                                                                    │
+                                                              Edge-TTS oder Piper ◀─┘ (optional) ──▶ Video mit neuer Tonspur
 ```
 
 - **Spracherkennung:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) läuft komplett auf deinem PC. Dein Video wird nirgends hochgeladen.
@@ -38,7 +41,8 @@ ffmpeg musst du nicht extra installieren: Ein mitgeliefertes ffmpeg wird automat
 1. Videos hinzufügen (mehrere auf einmal sind möglich).
 2. Sprache im Video (oder „Automatisch erkennen“) und Zielsprache wählen.
 3. Übersetzer wählen. Für Claude den API-Schlüssel eintragen. Alternativ die Umgebungsvariable `ANTHROPIC_API_KEY` setzen. Der Schlüssel wird nie in den Einstellungen gespeichert.
-4. Auf **Übersetzen** klicken. Die fertigen Dateien liegen neben dem Video (oder im gewählten Ordner). Bestehende Dateien werden nie überschrieben, stattdessen heißt die neue `… (2)`.
+4. Wer eine gesprochene Übersetzung will, setzt unter **6. Sprachausgabe** den Haken und wählt Stimme und Originalton.
+5. Auf **Übersetzen** klicken. Die fertigen Dateien liegen neben dem Video (oder im gewählten Ordner). Bestehende Dateien werden nie überschrieben, stattdessen heißt die neue `… (2)`.
 
 ### Kommandozeile
 
@@ -47,8 +51,22 @@ python cli.py urlaub.mp4 --to de                       # Untertitel + Video mit 
 python cli.py *.mp4 --to en --bilingual                 # mehrere Videos, zweisprachig
 python cli.py vortrag.mkv --to fr --burn --whisper medium
 python cli.py film.mp4 --to de --backend argos          # komplett offline und kostenlos
+python cli.py interview.mp4 --to de --dub               # zusätzlich ein Video mit gesprochener Übersetzung
+python cli.py interview.mp4 --to de --dub --voice male --original mix
+python cli.py interview.mp4 --to de --dub --tts piper   # Offline-Stimme
 python cli.py --help
 ```
+
+## Sprachausgabe (Vertonung)
+
+Das Ergebnis heißt `<video>.<sprache>.vertont.mp4` (bzw. `.mkv`, wenn das Original kein MP4/MOV war). Das Bild wird nicht neu kodiert, nur die Tonspur kommt dazu.
+
+| Einstellung | Möglichkeiten |
+|---|---|
+| **Stimme** | **Microsoft-Stimmen** (Edge-TTS): sehr natürlich, kostenlos, aber mit Internet. Der übersetzte *Text* wird dabei an Microsofts Online-Dienst geschickt, kein Ton und kein Video. Das Programm nutzt dafür die inoffizielle Schnittstelle der Vorlesefunktion von Microsoft Edge. Sie kann sich ändern und dann vorübergehend nicht mehr gehen. Zur Auswahl stehen eine weibliche und eine männliche Stimme pro Sprache.<br>**Offline-Stimme** (Piper): läuft ganz ohne Internet, klingt einfacher. Pro Sprache gibt es eine feste Stimme, die beim ersten Mal heruntergeladen wird (ca. 65 MB, gespeichert in `~/.video_translator/voices`). Dafür einmalig `pip install piper-tts` in der Programm-Umgebung. Piper steht unter GPL-3.0 und wird nicht mitgeliefert. |
+| **Originalton** | als **zweite Tonspur behalten** (im Player umschaltbar, die Vertonung läuft zuerst), **leise im Hintergrund** mitlaufen lassen oder **entfernen** |
+
+So wird der Ton zusammengebaut: Jede Zeile wird einzeln gesprochen und zur Startzeit des Originals eingesetzt. Passt eine Zeile nicht bis zur nächsten, wird sie bis höchstens 1,35-fach beschleunigt. Reicht das nicht, verschiebt sich die nächste Zeile ein Stück nach hinten, statt dass sich beide überlagern. Zeilen, die die Stimme nicht sprechen kann, bleiben stumm und werden gemeldet.
 
 ## Tipps
 
@@ -71,8 +89,10 @@ python cli.py --help
 |---|---|
 | `app.py` | Fenster (tkinter) |
 | `cli.py` | Kommandozeile |
-| `core.py` | Ablauf: ffmpeg, Whisper, Übersetzer, SRT, Ausgabe |
-| `test_core.py` | Tests: `python -m unittest` (ohne Internet, ohne API-Schlüssel) |
+| `pipeline.py` | der ganze Ablauf für ein Video |
+| `core.py` | Bausteine: ffmpeg, Whisper, Übersetzer, Untertitel (SRT) |
+| `dubbing.py` | Sprachausgabe: Stimmen, Zeitplan, Tonspur zusammenbauen |
+| `test_core.py`, `test_dubbing.py` | Tests: `python -m unittest` (ohne Internet, ohne API-Schlüssel) |
 
 ## Wie die Claude-Übersetzung arbeitet
 

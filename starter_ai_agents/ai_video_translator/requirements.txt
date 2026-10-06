@@ -1,7 +1,11 @@
 faster-whisper>=1.1.0
 anthropic>=1.0.0
 imageio-ffmpeg>=0.5.1
+numpy
+edge-tts>=7.0
 
-# Optional: kostenlose Offline-Übersetzung (großer Download, enthält PyTorch).
-# Ohne diese Zeile funktioniert alles außer dem Übersetzer "Offline".
+# Optional, jeweils nur bei Bedarf (Details im README):
+# Offline-Übersetzung (großer Download, enthält PyTorch):
 # argostranslate>=1.9
+# Offline-Stimme für die Sprachausgabe (Lizenz: GPL-3.0):
+# piper-tts>=1.3

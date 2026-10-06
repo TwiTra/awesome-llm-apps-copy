@@ -6,9 +6,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from core import (
-    DEFAULT_CLAUDE_MODEL, LANGUAGES, WHISPER_MODELS, Options, PipelineError, process_video,
-)
+from core import DEFAULT_CLAUDE_MODEL, LANGUAGES, WHISPER_MODELS, PipelineError
+from dubbing import ORIGINAL_AUDIO_MODES
+from pipeline import Options, process_video
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,13 +28,23 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-soft-video", dest="soft_video", action="store_false",
                    help="kein Video mit Untertitel-Spur erzeugen (nur .srt)")
     p.add_argument("--burn", dest="burn_video", action="store_true", help="Untertitel zusätzlich ins Bild einbrennen")
+    p.add_argument("--dub", action="store_true",
+                   help="Übersetzung von einer Computerstimme sprechen lassen (zusätzliches Video mit neuer Tonspur)")
+    p.add_argument("--tts", dest="tts_engine", choices=["edge", "piper"], default="edge",
+                   help="Stimme: edge = Microsoft, sehr natürlich, braucht Internet; piper = offline")
+    p.add_argument("--voice", dest="voice_gender", choices=["female", "male"], default="female",
+                   help="weibliche oder männliche Stimme (nur edge)")
+    p.add_argument("--original", dest="original_audio", choices=ORIGINAL_AUDIO_MODES, default="keep",
+                   help="Originalton: keep = zweite Tonspur, mix = leise im Hintergrund, drop = entfernen")
     p.add_argument("--out-dir", type=Path, default=None, help="Ausgabeordner (Standard: neben dem Video)")
     args = p.parse_args(argv)
 
     opts = Options(
         target_lang=args.target, source_lang=args.source, backend=args.backend, api_key=args.api_key,
         claude_model=args.claude_model, whisper_model=args.whisper_model, device=args.device,
-        bilingual=args.bilingual, soft_video=args.soft_video, burn_video=args.burn_video, output_dir=args.out_dir,
+        bilingual=args.bilingual, soft_video=args.soft_video, burn_video=args.burn_video, dub=args.dub,
+        tts_engine=args.tts_engine, voice_gender=args.voice_gender, original_audio=args.original_audio,
+        output_dir=args.out_dir,
     )
 
     last_percent = -1
