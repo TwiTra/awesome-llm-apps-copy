@@ -1,0 +1,7 @@
+faster-whisper>=1.1.0
+anthropic>=1.0.0
+imageio-ffmpeg>=0.5.1
+
+# Optional: kostenlose Offline-Übersetzung (großer Download, enthält PyTorch).
+# Ohne diese Zeile funktioniert alles außer dem Übersetzer "Offline".
+# argostranslate>=1.9
