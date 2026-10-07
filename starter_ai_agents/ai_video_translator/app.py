@@ -93,9 +93,10 @@ class App(tk.Tk):
         self.voice = tk.StringVar(value=GENDER_LABELS.get(saved.get("voice_gender"), GENDER_LABELS["female"]))
         self.original = tk.StringVar(value=ORIGINAL_LABELS.get(saved.get("original_audio"), ORIGINAL_LABELS["keep"]))
 
+        self._poll_job = None
         self._build()
         self._refresh_states()
-        self.after(100, self._poll)
+        self._poll()
 
     # ------------------------------------------------------------ layout
 
@@ -268,7 +269,7 @@ class App(tk.Tk):
                 return name
         return "small"
 
-    def _options(self) -> Options:
+    def _build_options(self) -> Options:
         return Options(
             target_lang=language_code(self.target.get()) or "de",
             source_lang=language_code(self.source.get()),
@@ -291,7 +292,7 @@ class App(tk.Tk):
         if not self.videos:
             messagebox.showinfo("Video-Übersetzer", "Bitte zuerst mindestens ein Video hinzufügen.")
             return
-        opts = self._options()
+        opts = self._build_options()
         # The API key is deliberately not saved; use the ANTHROPIC_API_KEY environment variable for that.
         save_settings({
             "target": opts.target_lang, "backend": opts.backend, "claude_model": opts.claude_model,
@@ -354,7 +355,13 @@ class App(tk.Tk):
                     self.cancel_btn.configure(state="disabled")
         except queue.Empty:
             pass
-        self.after(100, self._poll)
+        self._poll_job = self.after(100, self._poll)
+
+    def destroy(self) -> None:
+        if self._poll_job is not None:  # otherwise the timer fires into a closed window
+            self.after_cancel(self._poll_job)
+            self._poll_job = None
+        super().destroy()
 
     def _append_log(self, text: str) -> None:
         self.log.configure(state="normal")
