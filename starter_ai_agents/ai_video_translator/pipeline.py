@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -33,6 +35,38 @@ class Options:
     voice_gender: str = "female"  # "female" | "male" (Microsoft voices only)
     original_audio: str = "keep"  # "keep" as 2nd track | "mix" quietly in the background | "drop"
     output_dir: Optional[Path] = None  # None = next to the video
+
+
+# A finished speech recognition is worth keeping: if the translation then fails (empty credit balance,
+# no internet, rate limit), the next attempt does not have to transcribe the whole video again.
+CACHE_DIR = Path.home() / ".video_translator" / "cache"
+CACHE_KEEP = 30  # newest transcripts to keep
+
+
+def _cache_file(video: Path, opts: Options) -> Path:
+    stat = video.stat()
+    key = json.dumps([str(video.resolve()), stat.st_size, stat.st_mtime_ns, opts.whisper_model, opts.source_lang or "auto"])
+    return CACHE_DIR / (hashlib.sha1(key.encode("utf-8")).hexdigest()[:20] + ".json")
+
+
+def _load_transcript(path: Path) -> Optional[tuple[list[Cue], str]]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        cues = [Cue(float(c["start"]), float(c["end"]), str(c["text"])) for c in data["cues"]]
+        return (cues, str(data["language"])) if cues else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None  # missing or damaged: just transcribe again
+
+
+def _save_transcript(path: Path, cues: list[Cue], language: str) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"language": language, "cues": [{"start": c.start, "end": c.end, "text": c.text} for c in cues]}
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        for old in sorted(path.parent.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)[CACHE_KEEP:]:
+            old.unlink(missing_ok=True)
+    except OSError:
+        pass  # a cache is a convenience, never a reason to fail
 
 
 def make_translator(opts: Options, log: LogFn = noop):
@@ -94,17 +128,26 @@ def process_video(
         "soft": 3 if opts.soft_video else 0, "burn": 12 if opts.burn_video else 0,
     })
 
+    cache_file = _cache_file(video, opts)
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        log("Extrahiere Tonspur ...")
-        extract_audio(ffmpeg, video, work / "audio.wav", cancel)
-        budget.done("audio")
+        cached = _load_transcript(cache_file)
+        if cached:
+            cues, src = cached
+            log("Spracherkennung aus dem Zwischenspeicher geladen: Dieses Video war schon einmal so weit.")
+            budget.done("audio")
+            budget.done("transcribe")
+        else:
+            log("Extrahiere Tonspur ...")
+            extract_audio(ffmpeg, video, work / "audio.wav", cancel)
+            budget.done("audio")
 
-        log("Erkenne Sprache und schreibe Text mit (das dauert je nach Länge und Modell) ...")
-        cues, src = transcribe(work / "audio.wav", opts.whisper_model, opts.source_lang, opts.device,
-                               log, budget.stage("transcribe"), cancel)
-        if not cues:
-            raise PipelineError("In diesem Video wurde keine Sprache erkannt.")
+            log("Erkenne Sprache und schreibe Text mit (das dauert je nach Länge und Modell) ...")
+            cues, src = transcribe(work / "audio.wav", opts.whisper_model, opts.source_lang, opts.device,
+                                   log, budget.stage("transcribe"), cancel)
+            if not cues:
+                raise PipelineError("In diesem Video wurde keine Sprache erkannt.")
+            _save_transcript(cache_file, cues, src)
         log(f"{len(cues)} Textabschnitte erkannt.")
 
         if src == opts.target_lang:

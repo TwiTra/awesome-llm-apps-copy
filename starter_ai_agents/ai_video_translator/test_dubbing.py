@@ -1,5 +1,7 @@
 """Offline tests for dubbing and the pipeline wiring: run with `python -m unittest` from this folder."""
 
+import itertools
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -227,10 +229,14 @@ class MuxTests(unittest.TestCase):
 class PipelineWiringTests(unittest.TestCase):
     """process_video with Whisper, the translator and the voice replaced by fakes."""
 
+    out_dirs = itertools.count()  # every run gets its own output folder
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.dir = Path(cls.tmp.name)
+        cls.cache = mock.patch.object(pipeline, "CACHE_DIR", cls.dir / "cache")  # never touch the real home
+        cls.cache.start()
         cls.ffmpeg = _ffmpeg()
         cls.video = cls.dir / "talk.mp4"
         subprocess.run(
@@ -240,9 +246,13 @@ class PipelineWiringTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls.cache.stop()
         cls.tmp.cleanup()
 
-    def run_pipeline(self, opts, source="en", tts=None):
+    def setUp(self):
+        shutil.rmtree(self.dir / "cache", ignore_errors=True)
+
+    def run_pipeline(self, opts, source="en", tts=None, translator=None, transcriber=None):
         class Translator:
             def preflight(self, src):
                 pass
@@ -253,10 +263,12 @@ class PipelineWiringTests(unittest.TestCase):
 
         cues = [Cue(0.5, 1.5, "hello"), Cue(2.0, 3.0, "world")]
         seen = []
-        out_dir = self.dir / f"out_{len(list(self.dir.iterdir()))}"
+        out_dir = self.dir / f"out_{next(self.out_dirs)}"
         opts.output_dir = out_dir
-        with mock.patch.object(pipeline, "transcribe", return_value=(cues, source)), \
-                mock.patch.object(pipeline, "make_translator", return_value=Translator()), \
+        transcriber = transcriber or mock.Mock(return_value=(cues, source))
+        self.transcriber = transcriber
+        with mock.patch.object(pipeline, "transcribe", transcriber), \
+                mock.patch.object(pipeline, "make_translator", return_value=translator or Translator()), \
                 mock.patch.object(pipeline, "make_tts", return_value=tts):
             files = pipeline.process_video(self.video, opts, log=lambda m: seen.append(m), progress=seen.append)
         return files, seen
@@ -277,6 +289,47 @@ class PipelineWiringTests(unittest.TestCase):
         self.assertTrue(all(f.stat().st_size > 0 for f in files))
         progress = [x for x in seen if isinstance(x, float)]
         self.assertEqual(progress, sorted(progress))
+
+    def test_failed_translation_does_not_cost_the_transcription(self):
+        class Broken:
+            def preflight(self, src):
+                pass
+
+            def translate(self, texts, src, progress=lambda f: None, cancel=None):
+                raise core.PipelineError("kein Guthaben")
+
+        with self.assertRaises(core.PipelineError):
+            self.run_pipeline(pipeline.Options(soft_video=False), translator=Broken())
+        self.assertEqual(self.transcriber.call_count, 1)
+
+        files, seen = self.run_pipeline(pipeline.Options(soft_video=False))  # second attempt works
+        self.assertEqual(self.transcriber.call_count, 0, "the transcript should have come from the cache")
+        self.assertIn("HELLO", files[0].read_text(encoding="utf-8"))
+        self.assertTrue(any("Zwischenspeicher" in m for m in seen if isinstance(m, str)))
+
+    def test_cache_is_not_used_for_a_different_whisper_model_or_language(self):
+        self.run_pipeline(pipeline.Options(soft_video=False, whisper_model="tiny"))
+        self.run_pipeline(pipeline.Options(soft_video=False, whisper_model="small"))
+        self.assertEqual(self.transcriber.call_count, 1)  # "small" had to be transcribed itself
+        self.run_pipeline(pipeline.Options(soft_video=False, whisper_model="small", source_lang="en"))
+        self.assertEqual(self.transcriber.call_count, 1)
+
+    def test_damaged_cache_file_is_ignored(self):
+        self.run_pipeline(pipeline.Options(soft_video=False))
+        for f in (self.dir / "cache").glob("*.json"):
+            f.write_text("{not json", encoding="utf-8")
+        files, _ = self.run_pipeline(pipeline.Options(soft_video=False))
+        self.assertEqual(self.transcriber.call_count, 1)
+        self.assertTrue(files[0].exists())
+
+    def test_cache_keeps_only_the_newest_transcripts(self):
+        cache = self.dir / "cache"
+        cache.mkdir()
+        for i in range(pipeline.CACHE_KEEP + 5):
+            (cache / f"old{i:03d}.json").write_text("{}", encoding="utf-8")
+        pipeline._save_transcript(cache / "new.json", [Cue(0, 1, "x")], "en")
+        self.assertEqual(len(list(cache.glob("*.json"))), pipeline.CACHE_KEEP)
+        self.assertTrue((cache / "new.json").exists())
 
     def test_dubbing_is_skipped_when_video_is_already_in_target_language(self):
         files, seen = self.run_pipeline(pipeline.Options(soft_video=False, dub=True), source="de", tts=FakeTts([1, 1]))

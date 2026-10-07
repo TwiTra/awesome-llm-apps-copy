@@ -288,14 +288,32 @@ class _BadResponse(Exception):
     pass
 
 
-def _auth_error(error: Exception) -> Exception:
+def _api_error(error: Exception) -> Exception:
+    """Turn the API failures people actually run into into messages they can act on.
+
+    Returns the error itself when there is nothing better to say."""
+    import anthropic
+
+    text = str(error).lower()
     # With no credentials at all the SDK raises a TypeError instead of AuthenticationError.
-    if isinstance(error, TypeError) and "authentication" not in str(error).lower():
-        return error
-    return PipelineError(
-        "Der Anthropic-API-Schlüssel fehlt oder ist ungültig. Trage ihn ins Feld ein "
-        "oder setze die Umgebungsvariable ANTHROPIC_API_KEY."
-    )
+    if isinstance(error, anthropic.AuthenticationError) or (isinstance(error, TypeError) and "authentication" in text):
+        return PipelineError(
+            "Der Anthropic-API-Schlüssel fehlt oder ist ungültig. Trage ihn ins Feld ein "
+            "oder setze die Umgebungsvariable ANTHROPIC_API_KEY."
+        )
+    if isinstance(error, anthropic.BadRequestError) and "credit balance" in text:
+        return PipelineError(
+            "Auf deinem Anthropic-API-Konto ist kein Guthaben mehr. Lade es unter console.anthropic.com "
+            "(Plans & Billing) auf. Ein Claude-Abo für den Chat zählt dafür nicht, die API wird getrennt abgerechnet. "
+            "Für eine Übersetzung wie diese reichen meist wenige Cent bis ein Dollar."
+        )
+    if isinstance(error, anthropic.PermissionDeniedError):
+        return PipelineError("Dein API-Schlüssel hat keinen Zugriff auf dieses Modell.")
+    if isinstance(error, anthropic.RateLimitError):
+        return PipelineError("Die Anthropic-API meldet zu viele Anfragen (Rate-Limit). Bitte in ein paar Minuten noch einmal versuchen.")
+    if isinstance(error, anthropic.APIConnectionError):
+        return PipelineError("Keine Verbindung zur Anthropic-API. Ist der Rechner mit dem Internet verbunden?")
+    return error
 
 
 class ClaudeTranslator:
@@ -319,17 +337,24 @@ class ClaudeTranslator:
         return self._client
 
     def preflight(self, src: Optional[str]) -> None:
-        """Fail fast (before the slow transcription) on a wrong key or model name."""
+        """Fail fast, before the slow transcription, on a wrong key or model name or an empty balance."""
         import anthropic
 
         try:
             self.client.models.retrieve(self.model)
-        except (anthropic.AuthenticationError, TypeError) as e:
-            raise _auth_error(e) from e
         except anthropic.NotFoundError as e:
             raise PipelineError(f"Das Modell '{self.model}' gibt es nicht.") from e
-        except anthropic.PermissionDeniedError as e:
-            raise PipelineError("Dein API-Schlüssel hat keinen Zugriff auf dieses Modell.") from e
+        except (anthropic.APIError, TypeError) as e:
+            mapped = _api_error(e)
+            if mapped is e:
+                raise
+            raise mapped from e
+        try:
+            # One real request for a single word. It costs next to nothing, and it is the only way to find out
+            # that the credit balance is empty, which the free model lookup above does not reveal.
+            self._translate_batch(["Hello."])
+        except _BadResponse:
+            pass  # an odd answer to the test line is no reason to stop
 
     def translate(self, texts: list[str], src: Optional[str], progress: ProgressFn = noop,
                   cancel: Optional[threading.Event] = None) -> list[str]:
@@ -374,8 +399,11 @@ class ClaudeTranslator:
 
         try:
             response = create(**kwargs)
-        except (anthropic.AuthenticationError, TypeError) as e:
-            raise _auth_error(e) from e
+        except (anthropic.APIError, TypeError) as e:
+            mapped = _api_error(e)
+            if mapped is e:
+                raise
+            raise mapped from e
         if response.stop_reason == "refusal":
             raise _BadResponse("von der Sicherheitsprüfung abgelehnt")
         if response.stop_reason == "max_tokens":

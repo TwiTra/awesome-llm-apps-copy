@@ -23,6 +23,7 @@ class FakeClient:
         self.calls = []
         self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
         self.messages = SimpleNamespace(create=self._create)
+        self.models = SimpleNamespace(retrieve=lambda model: SimpleNamespace(id=model))
         self._handler = handler
 
     def _create(self, **kwargs):
@@ -145,6 +146,71 @@ class ClaudeTranslatorTests(unittest.TestCase):
         tr, _ = self.make(handler)
         with self.assertRaisesRegex(core.PipelineError, "API-Schlüssel"):
             tr.translate(["hi"], "en")
+
+    @staticmethod
+    def api_error(cls, status, message, **extra):
+        import anthropic
+        import httpx2
+
+        request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        if cls is anthropic.APIConnectionError:
+            return cls(request=request)
+        response = httpx2.Response(status, request=request)
+        return cls(message, response=response, body={"error": {"message": message}})
+
+    def test_empty_credit_balance_is_explained(self):
+        import anthropic
+
+        error = self.api_error(anthropic.BadRequestError, 400,
+                               "Your credit balance is too low to access the Anthropic API.")
+
+        def handler(kwargs):
+            raise error
+
+        tr, _ = self.make(handler)
+        with self.assertRaisesRegex(core.PipelineError, "kein Guthaben"):
+            tr.translate(["hi"], "en")
+
+    def test_other_api_problems_are_explained_or_left_alone(self):
+        import anthropic
+
+        cases = [
+            (self.api_error(anthropic.RateLimitError, 429, "slow down"), "Rate-Limit"),
+            (self.api_error(anthropic.PermissionDeniedError, 403, "no"), "keinen Zugriff"),
+            (self.api_error(anthropic.APIConnectionError, 0, ""), "Keine Verbindung"),
+        ]
+        for error, expected in cases:
+            tr, _ = self.make(lambda kwargs, e=error: (_ for _ in ()).throw(e))
+            with self.assertRaisesRegex(core.PipelineError, expected):
+                tr.translate(["hi"], "en")
+        # a plain bad request (not about credit) and a server error are shown as they are
+        for error in (self.api_error(anthropic.BadRequestError, 400, "max_tokens too large"),
+                      self.api_error(anthropic.InternalServerError, 500, "oops")):
+            tr, _ = self.make(lambda kwargs, e=error: (_ for _ in ()).throw(e))
+            with self.assertRaises(type(error)):
+                tr.translate(["hi"], "en")
+
+    def test_preflight_sends_one_tiny_request(self):
+        tr, client = self.make(echo_upper)
+        tr.preflight("en")
+        self.assertEqual(len(client.calls), 1)
+        self.assertIn("Hello.", client.calls[0]["messages"][0]["content"])
+
+    def test_preflight_catches_an_empty_balance_before_any_work(self):
+        import anthropic
+
+        error = self.api_error(anthropic.BadRequestError, 400, "Your credit balance is too low")
+
+        def handler(kwargs):
+            raise error
+
+        tr, _ = self.make(handler)
+        with self.assertRaisesRegex(core.PipelineError, "kein Guthaben"):
+            tr.preflight("en")
+
+    def test_preflight_ignores_an_odd_answer_to_the_test_line(self):
+        tr, _ = self.make(lambda kwargs: fake_response("not json"))
+        tr.preflight("en")  # must not raise
 
     def test_unrelated_type_errors_are_not_disguised(self):
         def handler(kwargs):

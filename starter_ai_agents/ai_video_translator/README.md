@@ -101,6 +101,8 @@ So wird der Ton zusammengebaut: Jede Zeile wird einzeln gesprochen und zur Start
 - Das Standard-Claude-Modell ist `claude-opus-5-5`. Ein kleineres Modell (z. B. `claude-haiku-4-5`) tippst du einfach ins Feld „Modell“, es ist günstiger und etwas weniger fein. Übersetzt wird nur der Text. Das kostet für ein Video von einer Stunde nach grober Schätzung deutlich weniger als einen Dollar.
 - **Eingebrannte** Untertitel brauchen ein ffmpeg mit `libass` und kodieren das Video neu, das kann je nach Länge dauern. Das Programm prüft vorher, ob dein ffmpeg das kann, und sagt es, falls nicht. Dann hilft die Untertitel-Spur.
 - **Offline-Übersetzung** installierst du einmalig zusätzlich mit `pip install argostranslate` in der Programm-Umgebung (`.venv`). Das ist ein großer Download, weil PyTorch dazugehört.
+- Das Programm prüft **vor** der langen Spracherkennung, ob der API-Schlüssel, das Modell und das Guthaben passen (mit einer winzigen Testanfrage für ein Wort). Ein leeres Guthaben fällt so sofort auf. Der Claude-Chat (Abo) und die API sind getrennte Konten: Das Guthaben für die API lädst du unter console.anthropic.com auf.
+- Ist die Spracherkennung fertig und die Übersetzung scheitert danach (Internet weg, Rate-Limit), merkt sich das Programm den erkannten Text unter `~/.video_translator/cache` (die letzten 30 Videos). Beim nächsten Versuch mit demselben Video, Whisper-Modell und derselben Sprache entfällt die Spracherkennung. Der Ordner enthält den erkannten Text, du kannst ihn jederzeit löschen.
 - Bei einem Fehler in einem Video macht das Programm mit dem nächsten weiter.
 
 ## Dateien
