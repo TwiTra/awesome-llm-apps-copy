@@ -5,8 +5,9 @@
     python build_exe.py --onefile           # single dist/VideoUebersetzer.exe  (starts slower)
     python build_exe.py --test --zip        # also run the self-test on the result and zip the folder
 
-The offline extras (argostranslate, piper-tts) are left out on purpose: they are huge (PyTorch) or GPL,
-and nothing can be pip-installed into a packaged program. The window greys them out.
+Offline translation for German/Russian/English is built in (offline.py: ctranslate2 + sentencepiece, the
+models are downloaded on first use). Two extras are left out on purpose: argostranslate (needs PyTorch) and
+piper-tts (GPL), and nothing can be pip-installed into a packaged program. The window greys out the offline voice.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ NAME = "VideoUebersetzer"
 
 # Packages whose data files or native libraries PyInstaller's import scan does not find on its own
 # (Whisper's VAD model, ctranslate2/onnxruntime/av libraries, the bundled ffmpeg, TLS certificates).
-COLLECT_ALL = ["faster_whisper", "ctranslate2", "onnxruntime", "av", "imageio_ffmpeg", "certifi",
+COLLECT_ALL = ["faster_whisper", "ctranslate2", "sentencepiece", "onnxruntime", "av", "imageio_ffmpeg", "certifi",
                "anthropic", "httpx2", "edge_tts", "hf_xet"]
 EXCLUDE = ["torch", "matplotlib", "pytest", "IPython", "scipy", "pandas", "argostranslate", "piper"]
 

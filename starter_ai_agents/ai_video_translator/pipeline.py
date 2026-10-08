@@ -11,18 +11,19 @@ from pathlib import Path
 from typing import Optional
 
 from core import (
-    DEFAULT_CLAUDE_MODEL, ArgosTranslator, ClaudeTranslator, Cue, LogFn, PipelineError, ProgressFn,
+    DEFAULT_CLAUDE_MODEL, ClaudeTranslator, Cue, LogFn, PipelineError, ProgressFn,
     build_srt, burn_subtitles, embed_soft_subtitles, extract_audio, find_ffmpeg, language_label, noop,
     probe_duration, transcribe, unique_path,
 )
 from dubbing import build_dub_track, make_tts, mux_dub
+from offline import OfflineTranslator
 
 
 @dataclass
 class Options:
     target_lang: str = "de"
     source_lang: Optional[str] = None  # None = detect automatically
-    backend: str = "claude"  # "claude" | "argos"
+    backend: str = "claude"  # "claude" | "offline" ("argos" is the old name of "offline")
     api_key: str = ""
     claude_model: str = DEFAULT_CLAUDE_MODEL
     whisper_model: str = "small"
@@ -70,8 +71,8 @@ def _save_transcript(path: Path, cues: list[Cue], language: str) -> None:
 
 
 def make_translator(opts: Options, log: LogFn = noop):
-    if opts.backend == "argos":
-        return ArgosTranslator(opts.target_lang, log)
+    if opts.backend in ("offline", "argos"):
+        return OfflineTranslator(opts.target_lang, log)
     return ClaudeTranslator(opts.target_lang, opts.claude_model or DEFAULT_CLAUDE_MODEL, opts.api_key, log)
 
 

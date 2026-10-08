@@ -13,7 +13,7 @@ Ein Programm für den PC, das Videos **übersetzt**: Es erkennt die gesprochene 
 ## So funktioniert es
 
 ```
-Video ──ffmpeg──▶ Ton ──Whisper (lokal)──▶ Text + Zeiten ──Claude oder Argos──▶ Übersetzung ──▶ .srt / Video
+Video ──ffmpeg──▶ Ton ──Whisper (lokal)──▶ Text + Zeiten ──Claude oder Offline──▶ Übersetzung ──▶ .srt / Video
                                                                                     │
                                                               Edge-TTS oder Piper ◀─┘ (optional) ──▶ Video mit neuer Tonspur
 ```
@@ -21,7 +21,7 @@ Video ──ffmpeg──▶ Ton ──Whisper (lokal)──▶ Text + Zeiten ─
 - **Spracherkennung:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) läuft komplett auf deinem PC. Dein Video wird nirgends hochgeladen.
 - **Übersetzung:** Du hast die Wahl
   - **Claude** (beste Qualität, versteht Zusammenhang und Tonfall). Es wird nur der *Text* an die Anthropic-API geschickt, nie Ton oder Video. Du brauchst einen [API-Schlüssel](https://console.anthropic.com/).
-  - **Offline** mit [Argos Translate](https://github.com/argosopentech/argos-translate): kostenlos, ohne Internet (nach dem einmaligen Download der Sprachpakete), aber deutlich einfachere Qualität.
+  - **Offline** (fest eingebaut, auch in der `.exe`): kostenlos und ohne Internet, aber **nur für Deutsch, Russisch und Englisch** (in allen Richtungen, Russisch ↔ Deutsch läuft über Englisch). Die Qualität ist einfacher als bei Claude: Der Sinn kommt meist an, aber Umgangssprache, Eigennamen und Fachbegriffe werden öfter falsch oder wörtlich übersetzt. Die Modelle stammen vom Projekt [Argos Translate](https://github.com/argosopentech/argos-translate) (trainiert auf [OPUS](https://opus.nlpl.eu/)-Daten). Beim ersten Mal wird je Richtung ein Modell (150 bis 200 MB) von argos-net.com geladen, mit Prüfsumme kontrolliert und unter `~/.video_translator/models` abgelegt. Danach braucht die Übersetzung kein Internet mehr. Ein Video mit 450 Zeilen dauert auf einem normalen Rechner etwa eine Minute, bei Russisch ↔ Deutsch (zwei Schritte) doppelt so lang. Den Ordner kannst du jederzeit löschen, um Platz zu schaffen.
 
 ## Starten
 
@@ -51,7 +51,7 @@ Oder selbst bauen, auf einem Windows-PC mit Python: `pip install -r requirements
 Gut zu wissen:
 - Die Datei ist groß, weil Whisper, ffmpeg und die Python-Pakete drinstecken. Das Sprachmodell lädt Whisper beim ersten Übersetzen zusätzlich herunter (`small` ≈ 500 MB).
 - Die Datei ist nicht signiert. Windows zeigt deshalb evtl. „Der Computer wurde durch Windows geschützt“: **Weitere Informationen → Trotzdem ausführen**. Auch Virenscanner schlagen bei solchen Programmen manchmal fälschlich an.
-- **Nicht** enthalten sind die Offline-Übersetzung (Argos) und die Offline-Stimme (Piper), sie sind im Fenster ausgegraut. Dafür braucht es das Python-Setup (`start.bat`).
+- Die Offline-Übersetzung für Deutsch, Russisch und Englisch ist eingebaut. **Nicht** enthalten sind die Offline-Übersetzung für weitere Sprachen (Argos, braucht PyTorch) und die Offline-Stimme (Piper), die Stimme ist im Fenster ausgegraut. Beides gibt es nur im Python-Setup (`start.bat`).
 - Eine Grafikkarte wird nur genutzt, wenn die CUDA-Bibliotheken von NVIDIA installiert sind, sonst rechnet das Programm auf dem Prozessor.
 - Einstellungen und Protokoll liegen im Benutzerordner (`.video_translator.json`, `.video_translator.log`). Bei Problemen hilft das Protokoll.
 - `VideoUebersetzer.exe --selftest ergebnis.txt` prüft, ob alle Teile des Programms laufen, und schreibt das Ergebnis in die Datei.
@@ -70,7 +70,7 @@ Gut zu wissen:
 python cli.py urlaub.mp4 --to de                       # Untertitel + Video mit Untertitel-Spur
 python cli.py *.mp4 --to en --bilingual                 # mehrere Videos, zweisprachig
 python cli.py vortrag.mkv --to fr --burn --whisper medium
-python cli.py film.mp4 --to de --backend argos          # komplett offline und kostenlos
+python cli.py film.mp4 --to de --backend offline        # kostenlos ohne Internet (Deutsch, Russisch, Englisch)
 python cli.py interview.mp4 --to de --dub               # zusätzlich ein Video mit gesprochener Übersetzung
 python cli.py interview.mp4 --to de --dub --voice male --original mix
 python cli.py interview.mp4 --to de --dub --tts piper   # Offline-Stimme
@@ -100,7 +100,7 @@ So wird der Ton zusammengebaut: Jede Zeile wird einzeln gesprochen und zur Start
 - Mit einer NVIDIA-Grafikkarte (CUDA) ist „Gerät: auto“ deutlich schneller.
 - Das Standard-Claude-Modell ist `claude-opus-5-5`. Ein kleineres Modell (z. B. `claude-haiku-4-5`) tippst du einfach ins Feld „Modell“, es ist günstiger und etwas weniger fein. Übersetzt wird nur der Text. Das kostet für ein Video von einer Stunde nach grober Schätzung deutlich weniger als einen Dollar.
 - **Eingebrannte** Untertitel brauchen ein ffmpeg mit `libass` und kodieren das Video neu, das kann je nach Länge dauern. Das Programm prüft vorher, ob dein ffmpeg das kann, und sagt es, falls nicht. Dann hilft die Untertitel-Spur.
-- **Offline-Übersetzung** installierst du einmalig zusätzlich mit `pip install argostranslate` in der Programm-Umgebung (`.venv`). Das ist ein großer Download, weil PyTorch dazugehört.
+- Offline in **anderen Sprachen** als Deutsch, Russisch und Englisch geht nur im Python-Setup: Installiere einmalig `pip install argostranslate` in der Programm-Umgebung (`.venv`), dann nimmt „Offline“ dafür dieses Paket. Das ist ein großer Download, weil PyTorch dazugehört.
 - Das Programm prüft **vor** der langen Spracherkennung, ob der API-Schlüssel, das Modell und das Guthaben passen (mit einer winzigen Testanfrage für ein Wort). Ein leeres Guthaben fällt so sofort auf. Der Claude-Chat (Abo) und die API sind getrennte Konten: Das Guthaben für die API lädst du unter console.anthropic.com auf.
 - Ist die Spracherkennung fertig und die Übersetzung scheitert danach (Internet weg, Rate-Limit), merkt sich das Programm den erkannten Text unter `~/.video_translator/cache` (die letzten 30 Videos). Beim nächsten Versuch mit demselben Video, Whisper-Modell und derselben Sprache entfällt die Spracherkennung. Der Ordner enthält den erkannten Text, du kannst ihn jederzeit löschen.
 - Bei einem Fehler in einem Video macht das Programm mit dem nächsten weiter.
@@ -114,9 +114,10 @@ So wird der Ton zusammengebaut: Jede Zeile wird einzeln gesprochen und zur Start
 | `pipeline.py` | der ganze Ablauf für ein Video |
 | `core.py` | Bausteine: ffmpeg, Whisper, Übersetzer, Untertitel (SRT) |
 | `dubbing.py` | Sprachausgabe: Stimmen, Zeitplan, Tonspur zusammenbauen |
+| `offline.py` | Offline-Übersetzung Deutsch/Russisch/Englisch: Modelle laden und prüfen, übersetzen |
 | `selftest.py` | Selbsttest (`python app.py --selftest`), prüft auch die gebaute `.exe` |
 | `build_exe.py` | baut die `.exe` mit PyInstaller |
-| `test_core.py`, `test_dubbing.py` | Tests: `python -m unittest` (ohne Internet, ohne API-Schlüssel) |
+| `test_core.py`, `test_dubbing.py`, `test_offline.py`, `test_gui.py` | Tests: `python -m unittest` (ohne Internet, ohne API-Schlüssel) |
 
 ## Wie die Claude-Übersetzung arbeitet
 

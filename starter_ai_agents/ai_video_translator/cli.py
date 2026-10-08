@@ -17,8 +17,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--to", dest="target", default="de", choices=sorted(LANGUAGES), help="Zielsprache (Standard: de)")
     p.add_argument("--from", dest="source", default=None, choices=sorted(LANGUAGES),
                    help="Sprache im Video (Standard: automatisch erkennen)")
-    p.add_argument("--backend", choices=["claude", "argos"], default="claude",
-                   help="claude = beste Qualität (API-Schlüssel nötig), argos = kostenlos und offline")
+    p.add_argument("--backend", choices=["claude", "offline", "argos"], default="claude",
+                   help="claude = beste Qualität (API-Schlüssel nötig), offline = kostenlos ohne Internet "
+                        "(Deutsch, Russisch, Englisch; weitere Sprachen mit argostranslate), argos = wie offline")
     p.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
     p.add_argument("--api-key", default="", help="Anthropic-API-Schlüssel (sonst ANTHROPIC_API_KEY)")
     p.add_argument("--whisper", dest="whisper_model", default="small", choices=WHISPER_MODELS,

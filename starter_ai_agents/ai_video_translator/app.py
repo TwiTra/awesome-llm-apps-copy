@@ -20,8 +20,7 @@ from pipeline import Options, process_video
 
 SETTINGS_FILE = Path.home() / ".video_translator.json"
 LOG_FILE = Path.home() / ".video_translator.log"
-# The offline engines are not part of the .exe; the shorter labels keep the window from growing.
-ARGOS_LABEL = "Offline (kostenlos, Argos Translate - einfachere Qualität)"
+# The offline voice is not part of the .exe; the shorter label keeps the window from growing.
 PIPER_LABEL = "Offline-Stimme (Piper, einfacher)"
 PYTHON_ONLY = " (nur im Python-Setup)"
 AUTO = "Automatisch erkennen"
@@ -79,7 +78,8 @@ class App(tk.Tk):
         target = saved.get("target")
         self.target = tk.StringVar(value=language_label(target if target in LANGUAGES else "de"))
         self.source = tk.StringVar(value=AUTO)
-        self.backend = tk.StringVar(value=saved.get("backend", "claude"))
+        backend = saved.get("backend", "claude")
+        self.backend = tk.StringVar(value="offline" if backend == "argos" else backend)  # "argos" was the old name
         self.api_key = tk.StringVar(value=os.environ.get("ANTHROPIC_API_KEY", ""))
         self.claude_model = tk.StringVar(value=saved.get("claude_model", DEFAULT_CLAUDE_MODEL))
         self.whisper = tk.StringVar(value=WHISPER_HINTS.get(saved.get("whisper"), WHISPER_HINTS["small"]))
@@ -148,10 +148,12 @@ class App(tk.Tk):
         ttk.Label(box, text="Modell:").grid(row=2, column=0, sticky="w", padx=(20, 6))
         self.model_entry = ttk.Entry(box, textvariable=self.claude_model)
         self.model_entry.grid(row=2, column=1, sticky="ew")
-        self.argos_radio = ttk.Radiobutton(
-            box, text="Offline-Übersetzung" + PYTHON_ONLY if is_frozen() else ARGOS_LABEL,
-            value="argos", variable=self.backend, command=self._refresh_states)
-        self.argos_radio.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.offline_radio = ttk.Radiobutton(
+            box, text="Offline (kostenlos): Deutsch, Russisch, Englisch", value="offline",
+            variable=self.backend, command=self._refresh_states)
+        self.offline_radio.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Label(box, text="Einmalig: je Richtung 150-200 MB Download.",
+                  foreground="gray").grid(row=4, column=0, columnspan=2, sticky="w", padx=(20, 0))
 
         # 4. speech recognition
         box = ttk.LabelFrame(left, text="4. Spracherkennung (läuft lokal)", padding=8)
@@ -223,12 +225,8 @@ class App(tk.Tk):
     # ------------------------------------------------------------ actions
 
     def _refresh_states(self) -> None:
-        if is_frozen():  # the packaged .exe cannot install the heavy offline engines
-            if self.backend.get() == "argos":
-                self.backend.set("claude")
-            if self.tts_engine.get() == "piper":
-                self.tts_engine.set("edge")
-            self.argos_radio.configure(state="disabled")
+        if is_frozen() and self.tts_engine.get() == "piper":  # the packaged .exe does not contain the offline voice
+            self.tts_engine.set("edge")
         claude = "normal" if self.backend.get() == "claude" else "disabled"
         self.key_entry.configure(state=claude)
         self.model_entry.configure(state=claude)

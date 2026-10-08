@@ -41,8 +41,8 @@ def _tone(path: Path, seconds: float, rate: int = 22050, amplitude: float = 0.5)
 def check_imports() -> str:
     import importlib
 
-    names = ["tkinter", "numpy", "faster_whisper", "ctranslate2", "onnxruntime", "av", "anthropic",
-             "edge_tts", "certifi", "imageio_ffmpeg", "core", "dubbing", "pipeline"]
+    names = ["tkinter", "numpy", "faster_whisper", "ctranslate2", "sentencepiece", "onnxruntime", "av", "anthropic",
+             "edge_tts", "certifi", "imageio_ffmpeg", "core", "dubbing", "offline", "pipeline"]
     for name in names:
         importlib.import_module(name)
     return f"{len(names)} Module"
@@ -125,6 +125,25 @@ def check_claude_client() -> str:
     return "Anfrage und Antwort verarbeitet (simulierter Server)"
 
 
+def check_offline_translation() -> str:
+    import ctranslate2  # noqa: F401  (a missing or broken package is a failure, not a skip)
+    import sentencepiece  # noqa: F401
+
+    import core
+    import offline
+
+    try:
+        # downloads the English -> German model (about 150 MB) the first time
+        translated = offline.LocalTranslator("de").translate(["Hello, how are you?"], "en")[0]
+    except core.PipelineError as e:
+        if "konnte nicht geladen werden" in str(e):
+            raise Skip(str(e)) from e
+        raise
+    if "hallo" not in translated.lower():
+        raise RuntimeError(f"unerwartete Übersetzung: {translated!r}")
+    return f"Englisch -> Deutsch: {translated!r}"
+
+
 def check_edge_tts() -> str:
     import certifi
     import edge_tts
@@ -185,6 +204,7 @@ CHECKS: list[tuple[str, Callable[[], str]]] = [
     ("Video: Ton holen, Untertitel einbetten", check_video_roundtrip),
     ("Whisper + Sprachaktivität", check_whisper),
     ("Claude-Anbindung", check_claude_client),
+    ("Offline-Übersetzung", check_offline_translation),
     ("Microsoft-Stimmen", check_edge_tts),
     ("Sprachausgabe: Tonspur", check_dub_track),
     ("Fenster", check_window),

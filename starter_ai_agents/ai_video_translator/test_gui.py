@@ -130,20 +130,32 @@ class WindowTests(unittest.TestCase):
         self.assertEqual((opts.dub, opts.voice_gender, opts.original_audio, opts.target_lang),
                          (True, "male", "drop", "fr"))
 
-    def test_packaged_build_greys_out_the_offline_engines(self):
+    def test_packaged_build_keeps_offline_translation_but_greys_out_the_offline_voice(self):
         self.app.destroy()
         with mock.patch.object(app, "is_frozen", return_value=True):
             frozen = make_app()
             try:
-                frozen.backend.set("argos")
+                frozen.backend.set("offline")
                 frozen.tts_engine.set("piper")
                 frozen._refresh_states()
-                self.assertEqual((frozen.backend.get(), frozen.tts_engine.get()), ("claude", "edge"))
-                self.assertEqual(str(frozen.argos_radio.cget("state")), "disabled")
+                self.assertEqual(frozen.backend.get(), "offline")  # built into the .exe
+                self.assertEqual(str(frozen.offline_radio.cget("state")), "normal")
+                self.assertEqual(frozen.tts_engine.get(), "edge")  # Piper is not part of the .exe
                 self.assertEqual(str(frozen.piper_radio.cget("state")), "disabled")
             finally:
                 frozen.destroy()
         self.app = make_app()  # the cleanup destroys whatever self.app is now
+
+    def test_old_saved_backend_name_still_works(self):
+        self.app.destroy()
+        with mock.patch.object(app, "load_settings", return_value={"backend": "argos"}):
+            old = make_app()
+        try:
+            self.assertEqual(old.backend.get(), "offline")
+            self.assertEqual(old._build_options().backend, "offline")
+        finally:
+            old.destroy()
+        self.app = make_app()
 
 
 if __name__ == "__main__":
